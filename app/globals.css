@@ -1,0 +1,159 @@
+@import "tailwindcss" source("../");
+
+/* Docs and design notes contain example class names — keep them out of the bundle */
+@source not "../context";
+@source not "../.claude";
+@source not "../.agents";
+
+@theme {
+  /* Font */
+  --font-sans: var(--font-inter), "Inter", sans-serif;
+
+  /* Page and surface backgrounds */
+  --color-background: #f6f7fb;
+  --color-surface: #ffffff;
+  --color-surface-secondary: #f9fafb;
+  --color-surface-tertiary: #f2f5f7;
+  --color-surface-muted: #f4f5fb;
+
+  /* Borders */
+  --color-border: #e7eaf3;
+  --color-border-light: #e5e7eb;
+  --color-border-muted: #dfe1e7;
+
+  /* Text */
+  --color-text-primary: #101828;
+  --color-text-secondary: #6a7282;
+  --color-text-muted: #99a1af;
+  --color-text-dark: #364153;
+  --color-text-darker: #36394a;
+  --color-text-darkest: #111827;
+  --color-text-black: #131316;
+  --color-text-slate: #272835;
+  --color-text-slate-medium: #666d80;
+
+  /* Primary accent — purple */
+  --color-accent: #7c5cfc;
+  --color-accent-dark: #5e4cff;
+  --color-accent-light: #f3e8ff;
+  --color-accent-muted: #faf5ff;
+  --color-accent-foreground: #ffffff;
+  --color-accent-deep: #4a2ec5;
+
+  /* Success — green */
+  --color-success: #10b981;
+  --color-success-alt: #00bc7d;
+  --color-success-dark: #007a55;
+  --color-success-darker: #009966;
+  --color-success-light: #d0fae5;
+  --color-success-lightest: #ecfdf5;
+  --color-success-foreground: #007a55;
+
+  /* Info — blue */
+  --color-info: #61a8ff;
+  --color-info-dark: #155dfc;
+  --color-info-medium: #2b7fff;
+  --color-info-light: #dbeafe;
+  --color-info-lightest: #eff6ff;
+  --color-info-foreground: #155dfc;
+  --color-info-muted: #94a2c5;
+
+  /* Warning — orange */
+  --color-warning: #ff8904;
+  --color-warning-foreground: #ffffff;
+
+  /* Error — red */
+  --color-error: #ef4444;
+  --color-error-foreground: #ffffff;
+
+  /* LinkedIn brand */
+  --color-linkedin: #0a66c2;
+  --color-linkedin-light: #dce6f1;
+  --color-linkedin-foreground: #ffffff;
+
+  /* Dark overlays */
+  --color-overlay: #111827;
+  --color-overlay-dark: #131316;
+
+  /* Chart */
+  --color-chart-axis: #9ca3af;
+
+  /* Landing page mesh gradient and hatched section dividers */
+  --color-mesh-base: #fefeff;
+  --color-mesh-lilac: #f8f9fc;
+  --color-mesh-blue: #cfdff4;
+  --color-mesh-pink: #f9e9f7;
+  --color-hatch: #f4f5f8;
+
+  /* Border radius */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-full: 9999px;
+}
+
+@layer base {
+  /* Tailwind v4 defaults every border to currentColor — ui-rules requires --color-border */
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-border);
+  }
+
+  :root {
+    color-scheme: light;
+  }
+
+  body {
+    background-color: var(--color-background);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+  }
+}
+
+@utility mesh-hero {
+  background-color: var(--color-mesh-base);
+  background-image:
+    radial-gradient(30% 46% at 12% 106%, var(--color-mesh-pink) 0%, transparent 72%),
+    radial-gradient(16% 30% at 50% 106%, var(--color-mesh-blue) 0%, transparent 72%),
+    radial-gradient(34% 50% at 86% 108%, var(--color-mesh-pink) 0%, transparent 72%),
+    radial-gradient(22% 40% at 29% -6%, var(--color-mesh-blue) 0%, transparent 74%),
+    radial-gradient(19% 32% at 46% -8%, var(--color-mesh-pink) 0%, transparent 74%),
+    radial-gradient(20% 34% at 63% -4%, var(--color-mesh-pink) 0%, transparent 74%),
+    radial-gradient(
+      36% 78% at 103% 34%,
+      var(--color-mesh-blue) 0%,
+      var(--color-mesh-blue) 60%,
+      transparent 100%
+    );
+}
+
+@utility mesh-cta {
+  background-color: var(--color-mesh-lilac);
+  background-image:
+    radial-gradient(30% 46% at 12% 106%, var(--color-mesh-pink) 0%, transparent 72%),
+    radial-gradient(16% 30% at 50% 106%, var(--color-mesh-blue) 0%, transparent 72%),
+    radial-gradient(34% 50% at 86% 108%, var(--color-mesh-pink) 0%, transparent 72%),
+    radial-gradient(22% 40% at 29% -6%, var(--color-mesh-blue) 0%, transparent 74%),
+    radial-gradient(19% 32% at 46% -8%, var(--color-mesh-pink) 0%, transparent 74%),
+    radial-gradient(20% 34% at 63% -4%, var(--color-mesh-pink) 0%, transparent 74%),
+    radial-gradient(
+      36% 78% at 103% 34%,
+      var(--color-mesh-blue) 0%,
+      var(--color-mesh-blue) 60%,
+      transparent 100%
+    );
+}
+
+@utility hatch-band {
+  background-image: repeating-linear-gradient(
+    135deg,
+    var(--color-hatch) 0,
+    var(--color-hatch) 1px,
+    transparent 1px,
+    transparent 4.6px
+  );
+}
