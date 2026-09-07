@@ -276,9 +276,17 @@ The `resumes` bucket is private (`isPublic: false`, confirmed via `list-buckets`
 matching `architecture.md`'s "authenticated users only, own files only". So
 `profiles.resume_pdf_url` holds the object **key** (`{user_id}/resume.pdf`), not a
 fetchable URL. To show or hand out the file, mint a short-lived link with
-`createSignedUrl(key, 3600)` — it needs no session to fetch, so it drops straight
+`createSignedUrl(key, ttl)` — it needs no session to fetch, so it drops straight
 into an `<a href>` or `<iframe src>`. Server-side processing (feature 07's
 pdf-parse) uses `download(key)` and works on the Blob directly.
+
+**Do not embed a signed URL in a rendered page.** It is credential-free and
+time-limited, which is the worst combination for a link sitting in HTML: it
+leaks if the markup does, and it expires while the page is open, so the user
+clicks a dead link. `app/api/resume/view/route.ts` is the pattern instead — a
+redirect-only Route Handler that checks the session, mints a 60-second signed
+URL, and 302s to it. The page holds a stable in-app href, every click gets a
+fresh credential, and a signed-out request lands on /login.
 
 **Server Actions have a 1MB body limit.**
 

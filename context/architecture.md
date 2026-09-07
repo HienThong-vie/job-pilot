@@ -58,6 +58,7 @@
 │       │   ├── find/route.ts              → Trigger Adzuna job discovery
 │       │   └── research/route.ts          → Trigger company research agent
 │       ├── resume/
+│       │   ├── view/route.ts              → Session-gated redirect to a short-lived signed URL
 │       │   ├── generate/route.ts          → Generate base resume PDF from profile
 │       │   └── extract/route.ts           → Extract profile data from uploaded resume PDF
 ├── agent/
@@ -89,7 +90,7 @@
 │   │   ├── ProfileAttentionBanner.tsx     → "Profile needs attention" card
 │   │   ├── CompletionIndicator.tsx        → SVG completion ring
 │   │   ├── ResumeUpload.tsx               → Client — dropzone uploads on file select, + Generate Resume row
-│   │   ├── ResumePreview.tsx              → (not built — no design state for an uploaded resume yet)
+│   │   ├── ResumePreview.tsx              → The on-file resume row + View link
 │   │   ├── FormSection.tsx                → Divider + section heading + optional action
 │   │   ├── FormField.tsx                  → Uppercase label + optional action + control
 │   │   ├── TextInput.tsx                  → Shared input styling (incl. the nested variant)
@@ -311,7 +312,8 @@ Access: authenticated users only, own files only.
 
 - Provider: InsForge Auth
 - Methods: Google OAuth, GitHub OAuth
-- Protected routes: /dashboard, /profile, /find-jobs, /find-jobs/[id]
+- Protected routes: /dashboard, /profile, /find-jobs, /find-jobs/[id], /api/resume/*
+- Anything reading the session belongs in `proxy.ts`'s matcher, API routes included. `updateSession` there is the **only** thing that refreshes the 15-minute access token — `createServerClient` merely reads it — so an unmatched route fails as "signed out" once the token ages out, even for a signed-in user.
 - Public routes: /, /login
 - `proxy.ts` (Next.js 16 renamed `middleware.ts` → `proxy.ts`, exported function `proxy`) checks session on every protected route
 - On login → redirect to /dashboard

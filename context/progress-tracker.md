@@ -235,10 +235,20 @@ A review pass after the feature was verified turned up 11 issues; all were fixed
 - **`architecture.md`'s `lib/` boundary** did not cover a session-scoped read helper like `getCurrentProfile`. The System Boundaries table now says so explicitly, and adds "reads only — every write goes through `actions/` or `agent/`".
 - **`architecture.md` claimed `lib/utils.ts` holds `MATCH_THRESHOLD`.** It does not; that lands with feature 10/11. Corrected.
 
+**06 Profile Save Logic — resume review (follow-up)**
+
+Reported after the commit: the upload succeeded but there was no way to look at the file. `ResumePreview.tsx`, carried as "not built" since feature 05, is now built.
+
+- **`app/api/resume/view/route.ts`** — a redirect-only Route Handler (the exception `code-standards.md` already documents for `callback/route.ts`). It checks the session, mints a **60-second** signed URL, and 302s to it.
+- **A signed URL must not be embedded in the page.** It is credential-free *and* time-limited, which is the worst pair for a link in rendered HTML: it leaks with the markup and expires while the page sits open, so the user clicks a dead link. Routing through an in-app href means the page holds a stable link, each click mints a fresh short-lived credential, and a signed-out request lands on /login. Recorded in `library-docs.md`.
+- **`ResumePreview.tsx`** renders the filename plus a `View resume` link under the dropzone. `profile.png` has no design for this state, so it is composed from shapes already on the page — the tinted card treatment from Work Experience and the existing 40px control height. The status line above it now reports only the last action rather than doubling as the resting state.
+- The stored value is an object **key** (`{user_id}/resume.pdf`), not a display name, so the component derives the filename from the last path segment.
+- **`/api/resume/:path*` added to `proxy.ts`'s matcher.** Caught while wiring this up: the route was outside the matcher, and `updateSession` in the proxy is the only thing that refreshes the 15-minute access token (`createServerClient` only reads it). A "View resume" click more than 15 minutes after the page loaded would have failed as if signed out. Also covers the generate/extract routes features 07 and 08 add.
+- Verified: the link resolves through the redirect to a 200 `application/pdf` (real `%PDF-` bytes, the user's own 325KB file); the same URL with no session cookie 307s to `/login`; and `/api/resume/nope` 307s rather than 404s, which proves the proxy now runs on that path (the control `/api/other/nope` still 404s).
+
 **06 Profile Save Logic — still open**
 
 - **The profile row now holds placeholder data** entered during verification (Vercel / Stripe roles, a Hanoi address, a 600-byte stub PDF in storage). Harmless, and useful as a populated profile for features 07/08 to develop against, but it is not real — overwrite it through the UI whenever convenient.
-- **`ResumePreview.tsx` still not built** (carried from 05) — the design has no state for an uploaded resume, so the dropzone reports it as a one-line status instead. Revisit with feature 08.
 - **Client-side `identify()` / `posthog.reset()` still not wired** (carried from 03, 04 and 05). This feature added no sign-out affordance either, so there is still nothing to hang `reset()` on.
 - **Server-side exception tracking still off** (carried from 03).
 - **`/dashboard` is still a 404** — the OAuth callback redirects there on success, so a real login currently lands on a missing page until feature 14.

@@ -305,6 +305,8 @@ Measured off `context/designs/profile.png` (2940px export of a 1470px canvas —
 
 **Form feedback (feature 06).** Both cards report the result of their Server Action with a single `<p role="status">` line rather than a toast or a banner — the design has no state for either. Error copy is `text-error-strong`; success and the resting "a resume is on file" note are `text-text-dark`. The line is the only element the design does not specify, so it stays to one line of body text.
 
+**The on-file resume row (`ResumePreview`)** sits under the dropzone: `rounded-lg border border-border bg-surface-secondary p-4`, a `size-10` white icon tile, the filename in `text-sm font-semibold`, and a 40px outlined `View resume` link matching the Select Resume button. `profile.png` has no design for an uploaded resume, so this is built from shapes already on the page — the tinted-card treatment from Work Experience and the existing 40px control height. The status line above it now reports only the last action, not the resting state.
+
 **Error text uses `role="alert"`, everything else `role="status"`.** A polite live region is not reliably announced for a failed save, so the status line switches role with its severity.
 
 **Two `text[]` fields moved from comma-separated inputs to `TagInput`** — Job Titles Seeking and Preferred Locations. A single comma-separated input cannot represent a value that itself contains a comma ("San Francisco, CA" split into two rows), and both columns are `text[]` exactly like Skills and Industries. This is a deliberate deviation from `profile.png`, which shows plain inputs for both; the trade was correctness over a pixel match, and it reuses a component already on the page rather than introducing a pattern.
