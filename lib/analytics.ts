@@ -37,3 +37,20 @@ export async function trackServerSignIn(
     console.error("[lib/analytics] trackServerSignIn", error);
   }
 }
+
+export async function trackProfileCompleted(userId: string): Promise<void> {
+  try {
+    const posthog = createPostHogServer();
+    if (!posthog) return;
+
+    posthog.capture({
+      distinctId: userId,
+      event: "profile_completed",
+      properties: { userId },
+    });
+
+    await posthog.shutdown();
+  } catch (error) {
+    console.error("[lib/analytics] trackProfileCompleted", error);
+  }
+}

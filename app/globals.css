@@ -31,6 +31,7 @@
   --color-text-black: #131316;
   --color-text-slate: #272835;
   --color-text-slate-medium: #666d80;
+  --color-text-label: #4a5565;
 
   /* Primary accent — purple */
   --color-accent: #7c5cfc;
@@ -64,6 +65,10 @@
 
   /* Error — red */
   --color-error: #ef4444;
+  --color-error-strong: #fb2c36;
+  --color-error-light: #ffe2e2;
+  --color-error-lightest: #fef2f3;
+  --color-error-tint: #fffdfd;
   --color-error-foreground: #ffffff;
 
   /* LinkedIn brand */
