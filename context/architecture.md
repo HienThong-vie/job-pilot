@@ -42,14 +42,17 @@
 │   │   │   └── page.tsx                   → Login page
 │   │   └── callback/
 │   │       └── route.ts                   → OAuth callback handler (Route Handler — sets httpOnly session cookies)
-│   ├── dashboard/
-│   │   └── page.tsx                       → Main dashboard
-│   ├── profile/
-│   │   └── page.tsx                       → Profile form + resume management
-│   ├── find-jobs/
-│   │   ├── page.tsx                       → Find Jobs page — search controls + jobs list
-│   │   └── [id]/
-│   │       └── page.tsx                   → Individual job details page
+│   ├── (app)/                             → Route group: the signed-in shell. Adds no URL segment.
+│   │   ├── layout.tsx                     → AppNavbar + page background, shared by all three app pages
+│   │   ├── error.tsx                      → Client — error boundary for the signed-in pages
+│   │   ├── dashboard/
+│   │   │   └── page.tsx                   → Main dashboard
+│   │   ├── profile/
+│   │   │   └── page.tsx                   → Profile form + resume management
+│   │   └── find-jobs/
+│   │       ├── page.tsx                   → Find Jobs page — search controls + jobs list
+│   │       └── [id]/
+│   │           └── page.tsx               → Individual job details page
 │   └── api/
 │       ├── agent/
 │       │   ├── find/route.ts              → Trigger Adzuna job discovery
@@ -64,12 +67,14 @@
 │   ├── extractor.ts                       → GPT-4o job description extraction + structuring
 │   └── types.ts                           → Agent-specific TypeScript types
 ├── actions/
-│   ├── profile.ts                         → Profile save + update
+│   ├── profile.ts                         → saveProfile + uploadResume Server Actions
 │   └── jobs.ts                            → Job status updates
 ├── components/
 │   ├── ui/                                → shadcn/ui components only
 │   ├── layout/
-│   │   ├── Navbar.tsx
+│   │   ├── Navbar.tsx                     → Marketing navbar (homepage)
+│   │   ├── AppNavbar.tsx                  → Signed-in navbar — icons + active underline, usePathname
+│   │   ├── Logo.tsx
 │   │   └── Footer.tsx
 │   ├── homepage/
 │   │   ├── Hero.tsx
@@ -80,10 +85,17 @@
 │   │   ├── RecentActivity.tsx
 │   │   └── AnalyticsCharts.tsx
 │   ├── profile/
-│   │   ├── ProfileForm.tsx
-│   │   ├── ResumeUpload.tsx
-│   │   ├── ResumePreview.tsx
-│   │   └── CompletionIndicator.tsx
+│   │   ├── ProfileForm.tsx                → Client — the five form sections, useActionState(saveProfile)
+│   │   ├── ProfileAttentionBanner.tsx     → "Profile needs attention" card
+│   │   ├── CompletionIndicator.tsx        → SVG completion ring
+│   │   ├── ResumeUpload.tsx               → Client — dropzone uploads on file select, + Generate Resume row
+│   │   ├── ResumePreview.tsx              → (not built — no design state for an uploaded resume yet)
+│   │   ├── FormSection.tsx                → Divider + section heading + optional action
+│   │   ├── FormField.tsx                  → Uppercase label + optional action + control
+│   │   ├── TextInput.tsx                  → Shared input styling (incl. the nested variant)
+│   │   ├── SelectInput.tsx                → Native select + chevron
+│   │   ├── TagInput.tsx                   → Client — skills / industries chips
+│   │   └── WorkExperienceList.tsx         → Client — up to 3 roles, Add role
 │   ├── find-jobs/
 │   │   ├── SearchControls.tsx
 │   │   ├── JobsTable.tsx
@@ -103,7 +115,12 @@
 │   ├── adzuna.ts                          → Adzuna API client
 │   ├── posthog-client.ts                  → PostHog browser client
 │   ├── posthog-server.ts                  → PostHog server client
-│   └── utils.ts                           → Shared utility functions
+│   ├── profile.ts                         → getCurrentProfile() — session user's row, jsonb normalised
+│   ├── profile-completion.ts              → Completion % + missing-field labels
+│   ├── profile-form.ts                    → Zod schema + FormData reader for the profile form
+│   ├── analytics.ts                       → Server-side PostHog event helpers
+│   ├── profile-options.ts                 → Dropdown values + labels, shared by the form and the schema
+│   └── utils.ts                           → Shared constants (resume upload limits + messages)
 └── types/
     └── index.ts                           → Global TypeScript types
 ```
@@ -118,7 +135,7 @@
 | `agent/`      | All agent logic. Adzuna discovery, company research, matching, extraction. Nothing here touches React. |
 | `actions/`    | Server Actions for UI-triggered mutations only. Profile save, profile update.                          |
 | `components/` | UI only. No data fetching logic. No direct DB calls.                                                   |
-| `lib/`        | Third party client initialisation and shared utilities only.                                           |
+| `lib/`        | Third party client initialisation, shared utilities, and session-scoped read helpers (`getCurrentProfile`, `getPrimaryCta`). Reads only — every write goes through `actions/` or `agent/`. |
 | `types/`      | TypeScript types shared across the project.                                                            |
 
 ---
@@ -220,7 +237,8 @@ URL saved to profiles table
 | portfolio_url       | text        |                                              |
 | work_authorization  | text        | citizen / permanent_resident / visa_required |
 | resume_pdf_url      | text        | InsForge Storage URL of current resume       |
-| is_complete         | boolean     | True when all required fields filled         |
+| is_complete         | boolean     | True when all required fields filled *now*   |
+| profile_completed_at| timestamptz | First time the profile was ever complete — gates the one-shot `profile_completed` event |
 | created_at          | timestamptz |                                              |
 | updated_at          | timestamptz |                                              |
 
@@ -375,6 +393,15 @@ trigger on `auth.users` that inserts a `profiles` row at signup, copying `id`,
 guaranteed exactly one profile row, so no feature needs to handle "no row yet".
 `authenticated` cannot select `auth.users` through PostgREST, which is why email
 and name are copied into `profiles` rather than joined at read time.
+
+**Reading and writing `profiles`.** Queries go through `insforge.database.from(...)`
+— not `insforge.from(...)`, which does not exist. Two columns are `jsonb not null`
+with defaults (`work_experience` `'[]'`, `education` `'{}'`), so an untouched
+profile reads back as an empty array/object rather than null; `lib/profile.ts`
+normalises that at the read boundary so the rest of the app can trust the
+`Profile` type. An update that must match exactly one row chains
+`.select("id").single()` — PostgREST reports neither rows nor an error for an
+update that matched nothing.
 
 **Enum-like columns.** CHECK constraints are applied only where our own code
 controls the value: `jobs.source`, `agent_runs.status`, `agent_logs.level`, plus

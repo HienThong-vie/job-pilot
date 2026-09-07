@@ -166,6 +166,29 @@ export async function saveProfile(formData: ProfileFormData) {
 - Always call `revalidatePath` after mutations that affect page data
 - Never throw from Server Actions — always return the error
 
+**Form actions driven by `useActionState`** (e.g. `actions/profile.ts`'s
+`saveProfile` / `uploadResume`) take `(previousState, formData)` and return a
+three-state object instead, because `{ success, error }` cannot express the
+initial "nothing has happened yet" render or carry a success message:
+
+```typescript
+export type ProfileActionState = {
+  status: "idle" | "success" | "error";
+  message: string;
+};
+```
+
+The rest of the contract is unchanged — try/catch, `[actions/path]`-prefixed
+logs, `revalidatePath` after a successful mutation, never throw. Two further
+rules for this shape:
+
+- A `"use server"` module may only export **async functions**, so the initial
+  state for `useActionState` is declared in the Client Component, not exported
+  from the action file. The state *type* can be exported — types are erased.
+- **Authenticate before touching the payload.** The session check is the first
+  thing in the action, ahead of any parsing or validation, so nothing expensive
+  runs for a caller who is not signed in.
+
 **Exception — redirect-only Server Actions** (e.g. `actions/auth.ts`'s
 `signInWithOAuthAction`): an action whose entire job is to redirect the
 browser (OAuth kickoff, etc.) returns `Promise<void>` and calls Next's

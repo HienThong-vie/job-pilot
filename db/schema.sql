@@ -43,6 +43,14 @@ create table if not exists public.profiles (
   updated_at          timestamptz not null default now()
 );
 
+-- Feature 06. `is_complete` tracks the profile's *current* state, so it flips
+-- back to false whenever a required field is cleared. `profile_completed_at`
+-- records the first time the profile was ever complete, which is what the
+-- `profile_completed` analytics event means — without it the event re-fires
+-- every time a user clears a field and fills it back in.
+alter table public.profiles
+  add column if not exists profile_completed_at timestamptz;
+
 create table if not exists public.agent_runs (
   id                 uuid primary key default gen_random_uuid(),
   user_id            uuid        not null references public.profiles (id) on delete cascade,

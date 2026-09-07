@@ -232,6 +232,91 @@ Generic — not auth-specific despite living in `components/auth/`. Any `<form a
 
 ---
 
+### App Shell (signed-in pages)
+
+Files: `app/(app)/layout.tsx`, `components/layout/AppNavbar.tsx`
+Last updated: 2026-09-06
+
+| Property             | Class                                                                 |
+| -------------------- | --------------------------------------------------------------------- |
+| Page background      | `bg-background` on the layout wrapper (root `body` stays `bg-surface`) |
+| Navbar               | `h-16 border-b border-border bg-surface` — height on the **header**, inner row `h-full` |
+| Navbar inset         | `px-4 sm:px-6` (24px at the design width), full-bleed — no max-width   |
+| Nav item             | `flex h-full items-center gap-2 border-b-2 px-2 text-sm font-medium sm:px-4` |
+| Nav item — active    | `border-accent text-accent`, icon `text-accent`                        |
+| Nav item — inactive  | `border-transparent text-text-label`, icon `text-text-muted`           |
+| Nav gap              | `gap-0.5 sm:gap-2.5`                                                   |
+| Page column          | `mx-auto w-full max-w-[1000px] px-4 py-9 sm:px-8` → 936px cards        |
+
+**Pattern notes:**
+The in-app navbar is a **separate component from the marketing `Navbar`** — different height rules, different link styling, no CTA. It is the one `"use client"` component in `layout/`, because the active item comes from `usePathname()`; `Logo` is reused unchanged.
+
+Two design/rules conflicts were resolved in the design's favour, per ui-rules.md's own "design assets are the source of truth for visual decisions": the active item carries a **2px accent underline** (ui-rules.md says "colour change only, no underline") and every item has a **leading icon** (ui-rules.md does not mention icons). Inactive links are `#4A5565`, which ui-rules.md specifies but no token covered — added as `--color-text-label`, which is also the colour of every form label on this page.
+
+**Height must sit on the `<header>`, not the inner row.** With `border-box`, `h-16` on the header makes the 1px bottom border part of the 64px; putting `h-16` on the inner div instead yields 65px and pushes the whole page down by a pixel.
+
+The page column is `max-w-[1000px]` with `px-8`, not `max-w-[936px]`, so the **cards** land on the designed 936px while the gutter still collapses on small screens.
+
+---
+
+### Profile Page
+
+Files: `app/(app)/profile/page.tsx` and `components/profile/*`
+Last updated: 2026-09-07
+
+| Property                 | Class                                                                   |
+| ------------------------ | ----------------------------------------------------------------------- |
+| Card                     | `rounded-2xl border border-border bg-surface p-8 shadow-sm` (32px padding, not the 24px in ui-rules.md) |
+| Card gap                 | `gap-9` (36px) between cards, `py-9` page padding                        |
+| Card heading             | `text-xl/6 font-semibold text-text-primary`                             |
+| Card subtext             | `mt-1.5 text-sm text-text-secondary`                                    |
+| Section                  | `border-t border-border py-12` — the divider is the section's own top border |
+| Section heading          | `text-base font-semibold text-text-primary`, content `mt-6`             |
+| Field label              | `text-xs font-semibold tracking-[0.01em] text-text-label uppercase`, control `mt-1.5` |
+| Field grid               | `grid grid-cols-1 gap-5 sm:grid-cols-2` (20px, both axes)               |
+| Input                    | `h-[42px] rounded-md border border-border px-4 text-sm text-text-darkest` |
+| Input — filled vs empty  | `bg-surface-secondary placeholder-shown:bg-surface`                     |
+| Input — nested variant   | `h-[38px] bg-surface disabled:bg-surface-secondary disabled:text-text-darkest/50` |
+| Placeholder              | `placeholder:text-text-darkest/50`                                      |
+| Focus                    | `focus:border-accent focus:ring-1 focus:ring-accent focus:outline-none`  |
+| Select                   | same as input + `appearance-none pr-10`, `ChevronDown` `absolute right-2 size-4 text-text-label` |
+| Tag chip                 | `rounded-md border border-border bg-background py-1.5 pr-2.5 pl-3 text-sm` (34px tall), list `mt-3.5 gap-2` |
+| Add button (tag input)   | `h-[42px] rounded-md bg-surface-tertiary px-4 text-sm font-medium text-text-dark` |
+| Work-experience card     | `rounded-lg border border-border bg-surface-secondary p-5`, rows `gap-4` |
+| Dropzone                 | `h-[252px] rounded-xl border-2 border-dashed border-border bg-surface-secondary`, content centred |
+| Dropzone icon            | `size-13 rounded-full bg-surface shadow-sm` + `CloudUpload size-7 text-accent` |
+| Primary button (in-card) | `h-10 rounded-md bg-accent px-5 text-sm font-semibold text-accent-foreground` |
+| Save button              | `flex h-12 w-full items-center justify-center rounded-lg bg-accent text-base font-semibold`, above it `border-t border-border pt-8` |
+| Form status line         | `text-sm` — `text-error-strong` when the action failed, `text-text-dark` otherwise; `mb-4` above the Save button, `mt-4` under the dropzone |
+| Attention banner         | `rounded-2xl border border-error-light bg-error-tint px-8 py-9.5 shadow-sm` |
+| Missing-field tag        | `rounded-md bg-error-lightest px-2.5 py-1 text-xs/4 font-bold text-error-strong` (not a pill) |
+| Completion ring          | `size-32` SVG, `r=58`, `strokeWidth=12`, `-rotate-90`, track `stroke-error-light`, fill `stroke-error` |
+
+**Pattern notes:**
+Measured off `context/designs/profile.png` (2940px export of a 1470px canvas — **scale exactly 2**, confirmed by the 36px logo mark and the 64px navbar). Every card boundary and section height renders within **2px** of the design.
+
+**Inputs signal "has a value" with a tint.** On a white card an input carrying a value is `bg-surface-secondary` and an empty one is `bg-surface` — done with the CSS `placeholder-shown:` variant, so it stays correct as the user types with no JS. Inside the tinted work-experience card the rule inverts: inputs are always white and only a **disabled** one takes the tint, so give those `nested`. Every input therefore needs a `placeholder` — without one, `:placeholder-shown` never matches and an empty field renders tinted.
+
+**Placeholders are `text-text-darkest/50`, not `text-text-muted`.** The design's placeholder colour is `#888B93`, which is exactly Chrome's default (input colour at 50%); `--color-text-muted` (#99A1AF) from ui-rules.md is visibly lighter. The opacity modifier reproduces the design and stays consistent across browsers.
+
+**Dates are `<input type="month">`** — "January 2022" and the empty `---------- ----` in the design are Chrome's own month-input rendering, and the schema stores `YYYY-MM`. The "Currently working here" checkbox is left **unstyled** (native blue) because that is what the design shows; its label needs `text-sm/4` so the label row stays 16px and the row height matches the plain fields. The textarea needs `block` — as an inline-block it adds ~6px of baseline gap below itself.
+
+**Avoid `py-[38px]`-style arbitrary values for spacing here.** `py-[38px]` silently produced *no* rule in this project's Tailwind build while `h-[38px]` and `h-[252px]` worked; `py-9.5` (the fractional step on v4's dynamic spacing scale) is the reliable way to reach 38px. A missing padding class fails silently — always confirm a computed style after using one.
+
+**Form feedback (feature 06).** Both cards report the result of their Server Action with a single `<p role="status">` line rather than a toast or a banner — the design has no state for either. Error copy is `text-error-strong`; success and the resting "a resume is on file" note are `text-text-dark`. The line is the only element the design does not specify, so it stays to one line of body text.
+
+**Error text uses `role="alert"`, everything else `role="status"`.** A polite live region is not reliably announced for a failed save, so the status line switches role with its severity.
+
+**Two `text[]` fields moved from comma-separated inputs to `TagInput`** — Job Titles Seeking and Preferred Locations. A single comma-separated input cannot represent a value that itself contains a comma ("San Francisco, CA" split into two rows), and both columns are `text[]` exactly like Skills and Industries. This is a deliberate deviation from `profile.png`, which shows plain inputs for both; the trade was correctness over a pixel match, and it reuses a component already on the page rather than introducing a pattern.
+
+**The dropzone validates before it submits.** Type and size are checked in the input's `onChange`; a rejected file sets a local error, clears the input, and never reaches the Server Action — Next refuses an over-limit action body before the action can return its own message. `uploadResume` re-checks server-side regardless.
+
+**Pending states reuse `SubmitButton`.** The Save button is the shared `components/auth/SubmitButton.tsx` (`useFormStatus` → spinner + `disabled:opacity-60`), so it needs `flex items-center justify-center` to centre the swapped-in `Loader2`. The dropzone has no button to disable, so it shows pending by swapping its `CloudUpload` glyph for a spinning `Loader2` and its heading for "Uploading your resume…", and by disabling the file input.
+
+Section dividers are the section's own `border-t`, so sections stack without a separate divider element and the card header just carries `pb-4`.
+
+---
+
 ## Responsive Rules
 
 Last updated: 2026-09-03

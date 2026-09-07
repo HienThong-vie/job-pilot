@@ -180,23 +180,28 @@ export async function proxy(request: NextRequest) {
 
 ### DB Queries
 
+> **Corrected in feature 06.** Queries hang off `insforge.database`, **not** the
+> client root — `insforge.from(...)` does not exist. Verified against
+> `node_modules/@insforge/sdk/dist/client-DZHoCptg.d.ts` (`readonly database: Database`).
+> The builder itself is PostgREST's, so the chained methods are as documented.
+
 ```typescript
 // Read
-const { data, error } = await insforge
+const { data, error } = await insforge.database
   .from("jobs")
   .select("*")
   .eq("user_id", user.id)
   .order("found_at", { ascending: false });
 
 // Insert
-const { data, error } = await insforge
+const { data, error } = await insforge.database
   .from("jobs")
   .insert({ user_id: user.id, title, company, match_score })
   .select()
   .single();
 
 // Update
-const { error } = await insforge
+const { error } = await insforge.database
   .from("jobs")
   .update({ company_research: dossier })
   .eq("id", jobId)
@@ -208,6 +213,9 @@ const { error } = await insforge
 - Always scope queries to `user_id` — never query without user filter
 - Always handle the `error` return — never assume success
 - Use `.single()` when expecting exactly one row
+- On an **update**, chain `.select("id").single()` when exactly one row must
+  change. PostgREST returns no rows and no error for an update that matched
+  nothing; `.single()` turns that silent no-op into a real error.
 
 **RLS is already enforcing this server-side** (see the InsForge Database & RLS
 Pattern section of `architecture.md`) — every table has a
@@ -227,31 +235,35 @@ another user (`403`, RLS violation), and cannot violate a CHECK constraint
 
 ### Storage
 
-> ⚠️ **The snippet below is drifted and does not match the installed SDK.**
-> `getPublicUrl()` does not exist on `@insforge/sdk` 1.5.2 — the storage surface
-> is `upload(path, file)`, `uploadAuto(file)`, `download(path) -> Blob`, and
-> `remove(path)`. There is also no `upsert` option; uploading to an existing key
-> replaces it. The `resumes` bucket was created **private** in feature 04, so
-> there is no public URL to fetch in the first place. Resolve this properly in
-> feature 06/08 when the upload path is actually built — see **Private bucket
-> reads** below. Same class of drift as the `@insforge/ssr` package that turned
-> out not to exist.
+> **Resolved in feature 06.** The warning that used to sit here was half right.
+> There is no `upsert` option — `upload(path, file)` has plain PUT semantics and
+> replaces whatever is at that key, which is exactly the base-resume behaviour we
+> want. But `getPublicUrl()` **does** exist, and so does **`createSignedUrl()`**,
+> which is the right tool for this private bucket. Verified against
+> `node_modules/@insforge/sdk/dist/client-DZHoCptg.d.ts`.
+
+The installed surface of `insforge.storage.from(bucket)`:
+
+| Method                            | Returns                            | Notes                                                     |
+| --------------------------------- | ---------------------------------- | --------------------------------------------------------- |
+| `upload(path, file)`              | `{ data: StorageFileSchema, error }` | `File \| Blob`. PUT semantics — replaces the key in place. |
+| `uploadAuto(file)`                | `{ data, error }`                    | Auto-generated collision-free key. Not what we want here.  |
+| `download(path)`                  | `{ data: Blob, error }`              | Needs the caller's session.                                |
+| `list({ prefix, limit })`         | `{ data: { objects, ... }, error }`  |                                                            |
+| `remove(path \| path[])`          | `{ data, error }`                    | Up to 1000 keys.                                           |
+| `getPublicUrl(path)`              | `{ data: { publicUrl }, error }`     | **Public buckets only** — pure string building, no call.   |
+| `createSignedUrl(path, expiresIn)` | `{ data: { signedUrl, expiresAt }, error }` | Private buckets. Default 3600s, max 604800 (7d).   |
 
 ```typescript
-// Upload file
-const { data, error } = await insforge.storage
-  .from("resumes")
-  .upload(`${userId}/resume.pdf`, fileBuffer, {
-    contentType: "application/pdf",
-    upsert: true, // overwrites existing file
-  });
+// Upload — always derive the path from the session user, never the client
+const key = `${user.id}/resume.pdf`;
+const { error } = await insforge.storage.from("resumes").upload(key, file);
 
-// Get public URL
-const { data } = insforge.storage
-  .from("resumes")
-  .getPublicUrl(`${userId}/resume.pdf`);
-
-const url = data.publicUrl;
+// Save the key (not a URL) to the DB
+await insforge.database
+  .from("profiles")
+  .update({ resume_pdf_url: key })
+  .eq("id", user.id);
 ```
 
 **Storage paths:**
@@ -260,13 +272,29 @@ const url = data.publicUrl;
 
 **Private bucket reads:**
 
-The `resumes` bucket is private (`isPublic: false`), matching
-`architecture.md`'s "authenticated users only, own files only". A private
-object's URL cannot be dropped into an `<a href>` or `<iframe src>` — it needs
-an `Authorization` header. So reading a resume back means a server route that
-calls `storage.from('resumes').download(key)` and streams the blob to the
-client, and `profiles.resume_pdf_url` in practice holds the object **key**
-(`{user_id}/resume.pdf`), not a fetchable URL.
+The `resumes` bucket is private (`isPublic: false`, confirmed via `list-buckets`),
+matching `architecture.md`'s "authenticated users only, own files only". So
+`profiles.resume_pdf_url` holds the object **key** (`{user_id}/resume.pdf`), not a
+fetchable URL. To show or hand out the file, mint a short-lived link with
+`createSignedUrl(key, 3600)` — it needs no session to fetch, so it drops straight
+into an `<a href>` or `<iframe src>`. Server-side processing (feature 07's
+pdf-parse) uses `download(key)` and works on the Blob directly.
+
+**Server Actions have a 1MB body limit.**
+
+A resume arriving through a Server Action is subject to Next's
+`serverActions.bodySizeLimit`, which defaults to **1MB** — well under the 5MB the
+resume dropzone promises. `next.config.ts` raises it to `6mb`: the limit applies to
+the raw multipart body including boundaries and part headers, so it needs headroom
+above the real 5MB cap, which is enforced in `uploadResume` itself.
+
+Raising the limit does not remove the cliff, it only moves it. Next rejects an
+over-limit body **before the action runs**, so the action's own friendly error never
+gets a chance to return — the user sees a framework error instead. Any file input
+wired to a Server Action therefore needs the size check on the client as well, so
+an oversized file is never sent. Keep the server check too: the client is not a
+security boundary. `MAX_RESUME_BYTES`, `RESUME_MIME_TYPE` and the two error strings
+live in `lib/utils.ts` so both sides state the limit once.
 
 **Rules:**
 
@@ -276,8 +304,6 @@ client, and `profiles.resume_pdf_url` in practice holds the object **key**
 - Always derive the storage path from the session user's id server-side. InsForge's
   own per-object "own files only" enforcement is **unverified** — do not rely on it
   as the only thing stopping one user from reading another's resume
-
----
 
 ## Adzuna API
 

@@ -6,9 +6,9 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ## Current Status
 
-**Phase:** Phase 1 — Foundation
-**Last completed:** 04 Database Schema — `profiles` / `agent_runs` / `jobs` / `agent_logs` created from `db/schema.sql`, RLS + owner policies on all four, `anon` revoked, signup trigger provisioning `profiles`, private `resumes` bucket
-**Next:** 05 Profile Page — Full UI
+**Phase:** Phase 2 — Profile Page
+**Last completed:** 06 Profile Save Logic — `/profile` reads the signed-in user's real row, `saveProfile` writes every field through a zod-validated Server Action, `uploadResume` puts the PDF in the private `resumes` bucket. Verified end to end against the live backend with a real Google session.
+**Next:** 07 AI Profile Extraction from Resume
 
 ---
 
@@ -23,8 +23,8 @@ Update this file after every completed feature. Any AI agent reading this should
 
 ### Phase 2 — Profile Page
 
-- [ ] 05 Profile Page — Full UI
-- [ ] 06 Profile Save Logic
+- [x] 05 Profile Page — Full UI
+- [x] 06 Profile Save Logic
 - [ ] 07 AI Profile Extraction from Resume
 - [ ] 08 Resume PDF Generation from Profile
 
@@ -164,6 +164,84 @@ Three mismatches between `build-plan.md` and `architecture.md` were resolved in 
 - **`build-plan.md` 04 asks for "tailored fields" on `jobs`.** `architecture.md`'s `jobs` table has none, and no feature in the 17 produces them (there is no resume-tailoring or cover-letter feature). Looks vestigial from a cut feature — omitted. Note that feature 14's mock dashboard still shows a "Cover Letters Generated" stat card with no data source behind it.
 - **`build-plan.md` 06 says completion percentage and missing fields are "calculated and saved".** `architecture.md`'s `profiles` has only `is_complete boolean` — no `completion_percentage` or `missing_fields` columns. Built as specified; feature 06 either computes the percentage at render or adds the columns itself.
 - **`build-plan.md` 16 sorts recent activity by `created_at`.** `agent_runs` has no `created_at` — use `started_at`.
+
+**05 Profile Page — Full UI**
+
+- **The design is a 1470px canvas at exactly 2× scale** (2940px export, no frame — unlike the landing page's 4.022 scale with a 4px black border). Confirmed independently by the 36px logo mark and the 64px navbar. Every number below was sampled from `profile.png`, not eyeballed.
+- **Verified by rendering, not by inspection.** The built page was screenshotted at the design's own width and every card boundary, section height and the total page height compared against the design: all within **2px** (page height 3171 vs 3173). Three defects were found this way and fixed — a 1px-tall navbar, a banner sized by the wrong padding, and a work-experience card 11px too tall.
+- **First signed-in page, so the app shell landed here.** New `app/(app)/` route group (`layout.tsx` + `AppNavbar`) rather than repeating the navbar on three pages. A route group adds no URL segment, so `/profile` is unchanged and `proxy.ts` still protects it. `architecture.md`'s folder structure is updated to match.
+- **`AppNavbar` is separate from the marketing `Navbar`** and is the one client component in `layout/` (active item comes from `usePathname()`). Two ui-rules.md conflicts resolved in the design's favour, as that file itself instructs: the active item has a 2px accent underline (rules say colour-only) and each item has an icon (rules don't mention them).
+- **Native form controls, no shadcn/ui.** shadcn is still uninstalled and the design's controls are plainly native — a `<select>` with a chevron, a native checkbox, `<input type="month">` date pickers. Native keeps the page a Server Component tree, needs no Radix, submits into `formData` for free in feature 06, and avoids the pending shadcn token-mapping work. Only three pieces are client components: `TagInput`, `WorkExperienceList`, and `AppNavbar`.
+- **Inputs tint when they hold a value** (`bg-surface-secondary`, empty ones `bg-surface`) via the CSS `placeholder-shown:` variant — no JS, correct as the user types. Inside the tinted work-experience card the rule inverts (always white, tinted only when disabled). Consequence: **every input must carry a `placeholder`**, or an empty field renders tinted.
+- **`py-[38px]` silently generated no CSS** in this project's Tailwind build, while `h-[38px]` and `h-[252px]` in the same commit worked. Root cause not identified; `py-9.5` (v4's fractional dynamic-spacing step) produces the same 38px reliably. Worth remembering: a missing padding class fails silently — confirm a computed style after using an arbitrary spacing value.
+- **Five new tokens.** `--color-text-label` (#4A5565 — inactive nav items *and* every form label; ui-rules.md names this colour but no token covered it) plus the error family the banner needs: `--color-error-strong` (#FB2C36 tag text), `--color-error-light` (#FFE2E2 ring track + banner border), `--color-error-lightest` (#FEF2F3 tag background), `--color-error-tint` (#FFFDFD banner fill). The Add button's #F3F4F6 was mapped onto the existing `surface-tertiary` (#F2F5F7) — a 1/255 difference per channel, not worth a token.
+- **Card padding is 32px, not the 24px in ui-rules.md**, and the section rhythm is a consistent 48px above and below each divider, 20px between form rows, 6px between a label and its control.
+- **Completion is ten equally weighted required fields**, so the percentage always lands on a multiple of ten and the mock reproduces the design's 70% with exactly PHONE / LOCATION / EDUCATION missing. Optional fields (industries, salary, preferred locations, the URLs) are excluded. `lib/profile-completion.ts` is the single source; feature 06 can reuse it to set `is_complete`.
+- **Mock is a full `profiles` row.** `lib/mock-profile.ts` is typed as the new `types/index.ts` `Profile`, which mirrors the table's column names exactly — so feature 06 swaps one import in `app/(app)/profile/page.tsx` and touches no component. Delete `lib/mock-profile.ts` then.
+- **No Cover Letter Tone field.** `build-plan.md` 05 lists one under Job Preferences, but it is absent from the design and cover-letter generation is explicitly out of scope in `project-overview.md`. Omitted; `profiles.cover_letter_tone` stays null. (Same family as the vestigial "tailored fields" flagged in feature 04.)
+- **`ResumePreview.tsx` not built** — the design has no state for an already-uploaded resume. It belongs with feature 06/08, which is also where the private-bucket read path gets settled.
+- **The form is a real `<form>` with an inert `type="button"` Save.** Feature 06 adds `action={saveProfile}` and flips the button to `type="submit"`; leaving it as a submit now would GET-navigate to the same URL. The resume dropzone is a `<label>` wrapping an `sr-only` file input, so it is clickable and keyboard-reachable without JS.
+
+**05 Profile Page — still open**
+
+- **Client-side `identify()` / `posthog.reset()` are still not wired** (carried from feature 03). This feature added the first authenticated Client Components, but the design's navbar has **no sign-out affordance**, so there is still nothing to hang `reset()` on. Do it with the first page that adds one.
+- `/profile` was temporarily removed from `proxy.ts`'s matcher to screenshot the page without a session, then restored — `git diff proxy.ts` is clean. A real signed-in run still needs `allowedRedirectUrls` fixed in the InsForge dashboard (carried from feature 02).
+- The page currently prerenders as static. It becomes dynamic in feature 06 when it reads the session.
+
+**06 Profile Save Logic**
+
+- **Two Server Actions in `actions/profile.ts`, both `useActionState`-shaped.** `saveProfile` writes every field in one `update`; `uploadResume` puts the PDF in storage on file selection. Both return `{ status, message }` — the `code-standards.md` contract, made visible by giving `ProfileForm` and `ResumeUpload` a `"use client"` boundary. A `"use server"` module may only export **async functions**, so the `useActionState` initial state is declared on the client side of the boundary rather than exported from the action file.
+- **Uploads happen immediately on file selection, not on Save.** The dropzone is a sibling card *outside* the profile `<form>`, so it could never have ridden along on the same submit, and feature 07's "Extract from Resume" needs the file already in storage. The new `<form>` wraps only the dropzone — the "Generate Resume from Profile" button stays outside it so it cannot become a submit.
+- **Next caps Server Action bodies at 1MB.** The dropzone promises 5MB, so `next.config.ts` now sets `experimental.serverActions.bodySizeLimit: "6mb"` — the limit covers the raw multipart body including boundaries and part headers, so it needs headroom over the real cap, which `uploadResume` enforces itself (type must be `application/pdf`, size no more than 5MB).
+- **The size check has to run on the client too — found by testing, not by reading.** A 6.3MB PDF tripped Next's own `bodySizeLimit` *before* `uploadResume` could run (`Error: Body exceeded 6mb limit`), so the user got a framework error page instead of "That file is larger than the 5MB limit." Raising the limit only moves the cliff; the fix is to reject the file in `ResumeUpload`'s `onChange` so it never leaves the browser, and clear the input. The server check stays as the authoritative one — the client is not a security boundary. Both sides now read `MAX_RESUME_BYTES` / `RESUME_MIME_TYPE` and the two error strings from `lib/utils.ts` (previously an empty file), so the limit is stated once.
+- **`is_complete` is persisted; percentage and missing fields are not.** `build-plan.md` 06 says to save all three, but `profiles` has only `is_complete` (flagged as a deferred mismatch back in feature 04) and the other two are derivable from the same row — stored copies would go stale the moment anything else writes to `profiles`. `lib/profile-completion.ts` stays the single source and is still computed at render; its parameter was widened from `Profile` to a `Pick<>` of the ten fields it reads so the action can pass the parsed payload without inventing columns it does not write. `db/schema.sql` is unchanged by this feature.
+- **`resume_pdf_url` holds the object key, not a URL.** The bucket is private, so there is nothing fetchable to store. The SDK's `createSignedUrl(key, ttl)` is how features 07/08 hand the file to a browser — see the corrected Storage section in `library-docs.md`.
+- **Three `library-docs.md` drifts corrected**, all found by reading the installed `.d.ts` rather than trusting the file: DB queries are `insforge.database.from(...)` (`insforge.from(...)` does not exist); `getPublicUrl()` **does** exist and `createSignedUrl()` exists too, so the previous "write a server route that streams `download()`" prescription was wrong; and `upload()` genuinely has no `upsert` option but replaces in place anyway. Same class of drift as the `@insforge/ssr` package that turned out not to exist.
+- **Parsing and validation live in `lib/profile-form.ts`, not in the action.** A `"use server"` file cannot export the pure helpers, which would have left the fiddliest logic in the feature untestable — and feature 07 needs the same schema to validate GPT-4o's extracted profile. The reader normalises (trim, empty string to null, comma-split, coerce number, build the nested objects) and zod validates the result, so neither layer does both jobs.
+- **Three native-form encoding quirks the parser has to respect.** An unchecked checkbox submits **nothing at all**, so `is_current` is presence-based. A **disabled** input submits nothing either — which is exactly what happens to End Date once "Currently working here" is ticked, so `end_date` is simply absent for that index and defaults to an empty string. And the read-only Email input still submits its value, so email is deliberately re-read from the row instead: a client must not get to say what its own row already contains.
+- **A role added but never filled is dropped**, not written as an empty object — the filter is blank company *and* blank title.
+- **Enum values are validated in the zod layer, as `architecture.md` intended** when it left CHECK constraints off `experience_level` / `remote_preference` / `work_authorization`. Each list is declared `as const satisfies readonly ExperienceLevel[]`, so it cannot drift from the union in `types/index.ts` without failing the build. Every zod message is written to read as English, and the field label comes from the **deepest** named path segment — so a bad graduation year reports "Graduation year", not "Education".
+- **`profile_completed` fires only on the false to true transition.** The action re-reads `is_complete` before writing precisely so a second save of an already-complete profile does not re-fire it. Added as `trackProfileCompleted` in `lib/analytics.ts`, matching `trackServerSignIn`'s create → capture → `await shutdown()` shape.
+- **`lib/mock-profile.ts` deleted.** `lib/profile.ts`'s `getCurrentProfile()` replaces it, normalising the two `jsonb` columns at the read boundary (`education` defaults to an empty object and `work_experience` to an empty array in the schema, neither of which matches the `Profile` type). It holds the feature's one type assertion, commented. `/profile` now renders dynamic (f) rather than static (o), as expected.
+
+**06 Profile Save Logic — verification**
+
+Verified end to end against the live backend, signed in with a real Google account.
+The `allowedRedirectUrls` blocker carried since feature 02 is **resolved** — the backend
+accepts `http://localhost:3000/callback` and the full OAuth round trip now completes.
+
+- `tsc --noEmit`, `eslint .` and `next build` all clean; the build confirms `/profile` flipped from static to dynamic.
+- **First load of the real page** showed 20% complete with only FULL NAME and EMAIL filled — exactly the two columns `handle_new_user()` copies from `auth.users` at signup. The trigger works against a real OAuth signup, not just the synthetic insert tested in feature 04.
+- **Save round trip.** Filled every field including two roles (one with "Currently working here" ticked) and three skills, saved, and read the row back with `run-raw-sql`. `skills` / `industries` / `job_titles_seeking` / `preferred_locations` are real `text[]`; `work_experience` is a jsonb **array** of 2 whose `is_current` is a genuine boolean, not the string `"on"`; the current role's `end_date` is `""` even though its disabled input sent nothing; `education` is a populated object; `is_complete` is true; `cover_letter_tone` stayed null; `updated_at` was bumped by the trigger. **`email` is the real Google address from the row, so the read-only input's value was correctly ignored.**
+- **Reload persistence.** After a hard reload every value rehydrates, the attention banner is gone at 100%, and both roles come back with the checkbox state and the disabled End Date intact.
+- **`profile_completed` fired exactly once.** Confirmed in PostHog (`select count() from events where event = 'profile_completed'` → 1) despite two saves; the second save of an already-complete profile did not re-fire it.
+- **Resume upload.** A `.png` is rejected ("Only PDF files can be uploaded"); a 6.3MB PDF is rejected client-side with the 5MB message (this is the case that exposed the `bodySizeLimit` defect above); a valid PDF uploads and reports its filename. Uploading a second PDF left **exactly one** object in the bucket (`select key from storage.objects` → one row, `uploaded_at` from the second upload), confirming `upload()`'s replace-in-place semantics and that the missing `upsert` option costs us nothing. `resume_pdf_url` holds the bare key `{user_id}/resume.pdf`.
+- **`createSignedUrl` verified against the live backend**, not just the typings: it minted a URL that fetched the object with **no credentials at all** — 200, `application/pdf`, real `%PDF-` bytes. That is the read path features 07 and 08 should use, and it is now what `library-docs.md` prescribes.
+
+**06 Profile Save Logic — issues found by `/review` and fixed**
+
+A review pass after the feature was verified turned up 11 issues; all were fixed and re-verified.
+
+- **Every `.max()` in the Zod schema leaked raw library text.** "Full name Too big: expected string to have <=200 characters." reached the user, violating `code-standards.md`'s "never expose raw error messages". Reachable by pasting into any field — none carry `maxLength`. Every length and count constraint now carries its own message via the `tooLong()` / `tooMany()` helpers. This is the general lesson: **giving custom messages to the interesting cases is not enough — an unmessaged Zod constraint is a user-visible string.**
+- **`uploadResume` processed the payload before checking the session.** Harmless here, but this action is the template features 07/08 will copy, and there the following work is a GPT-4o call. Auth is now the first statement in both actions, and `code-standards.md` records the rule.
+- **A transient read failure logged the user out.** `getCurrentProfile()` returned `null` for both "no session" and "the query failed", and the page redirected to `/login` on null. It now returns a `ProfileResult` discriminated union; the page redirects only on `unauthenticated` and throws on `error`, which lands on a new `app/(app)/error.tsx` boundary (verified by forcing a throw: it renders inside the app shell, keeps the navbar, and does not redirect).
+- **`profile_completed` could fire more than once.** It was gated on the `is_complete` false→true transition, so clearing a field and re-filling it fired it again — but `code-standards.md` defines it as "first time". Added `profiles.profile_completed_at timestamptz` (in `db/schema.sql`, applied and backfilled), set once and never cleared, and the event is gated on it being null. Verified by running a full un-complete → re-complete cycle: `profile_completed_at` stayed at its original timestamp and PostHog still shows exactly one event. **This is the one place the "persist nothing derivable" decision does not apply — "has this ever been true" is not derivable from the current row.**
+- **Dropdown values were duplicated** between `ProfileForm.tsx` and the Zod schema with nothing tying them together; adding an option to a dropdown would have rendered fine and then failed validation on save. New `lib/profile-options.ts` is the single source: each tuple is `satisfies`-checked against its union in `types/index.ts`, and each label map is a `Record` keyed by that tuple, so a value without a label (or vice versa) fails to compile. Both the form and the schema derive from it.
+- **Comma-separated `text[]` inputs could not hold a comma.** "San Francisco, CA" split into two rows. Job Titles Seeking and Preferred Locations now use `TagInput`, the same component Skills and Industries already use, and the reader takes them with `repeated()` rather than splitting. A deliberate deviation from `profile.png`, which shows plain inputs — recorded in `ui-registry.md`. Verified: the value round-trips to Postgres as a single array element.
+  - Worth noting the trap this created and caught: switching the component without switching the reader left `commaSeparated()` reading only the *first* input and still splitting it, silently dropping the rest. The synthetic parser check found it before it shipped.
+- **Error text used `role="status"`**, a polite live region that is not reliably announced for a failed save. Both status lines now switch to `role="alert"` when the state is an error.
+- **A 0-byte file reported "Choose a PDF to upload."** — "no file" and "empty file" are now separate messages.
+- **`code-standards.md` said every Server Action returns `{ success, error }`**, which these two do not — `useActionState` needs an idle state and a success message. The file now documents the `(previousState, formData) -> { status, message }` form-action contract alongside the original, including the "only async exports from a `use server` module" and "authenticate first" rules.
+- **`architecture.md`'s `lib/` boundary** did not cover a session-scoped read helper like `getCurrentProfile`. The System Boundaries table now says so explicitly, and adds "reads only — every write goes through `actions/` or `agent/`".
+- **`architecture.md` claimed `lib/utils.ts` holds `MATCH_THRESHOLD`.** It does not; that lands with feature 10/11. Corrected.
+
+**06 Profile Save Logic — still open**
+
+- **The profile row now holds placeholder data** entered during verification (Vercel / Stripe roles, a Hanoi address, a 600-byte stub PDF in storage). Harmless, and useful as a populated profile for features 07/08 to develop against, but it is not real — overwrite it through the UI whenever convenient.
+- **`ResumePreview.tsx` still not built** (carried from 05) — the design has no state for an uploaded resume, so the dropzone reports it as a one-line status instead. Revisit with feature 08.
+- **Client-side `identify()` / `posthog.reset()` still not wired** (carried from 03, 04 and 05). This feature added no sign-out affordance either, so there is still nothing to hang `reset()` on.
+- **Server-side exception tracking still off** (carried from 03).
+- **`/dashboard` is still a 404** — the OAuth callback redirects there on success, so a real login currently lands on a missing page until feature 14.
 
 ---
 
