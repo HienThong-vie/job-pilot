@@ -5,7 +5,16 @@ import { updateSession } from "@insforge/sdk/ssr/middleware";
 // build time and ignores anything computed. PROTECTED_PATHS derives from it
 // instead of duplicating the route list, so the two can never drift apart.
 export const config = {
-  matcher: ["/dashboard/:path*", "/profile/:path*", "/find-jobs/:path*"],
+  matcher: [
+    "/dashboard/:path*",
+    "/profile/:path*",
+    "/find-jobs/:path*",
+    // The resume routes need this as much as the pages do: `updateSession` is
+    // the only thing that refreshes the 15-minute access token, and
+    // `createServerClient` only reads it. Without this entry a link clicked
+    // more than 15 minutes after the page loaded fails as if signed out.
+    "/api/resume/:path*",
+  ],
 };
 
 const PROTECTED_PATHS = config.matcher.map((pattern) =>

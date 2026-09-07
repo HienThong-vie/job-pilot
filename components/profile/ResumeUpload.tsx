@@ -4,6 +4,7 @@ import { useActionState, useRef, useState, type ChangeEvent } from "react";
 import { CloudUpload, FileText, Loader2 } from "lucide-react";
 
 import { uploadResume, type ProfileActionState } from "@/actions/profile";
+import { ResumePreview } from "@/components/profile/ResumePreview";
 import {
   MAX_RESUME_BYTES,
   RESUME_MIME_TYPE,
@@ -14,6 +15,11 @@ import {
 // A "use server" module can only export async functions, so the initial state
 // for useActionState is declared on the client side of the boundary.
 const INITIAL_STATE: ProfileActionState = { status: "idle", message: "" };
+
+// `profiles.resume_pdf_url` holds the object key ("{user_id}/resume.pdf"), not
+// a name to show a person.
+const resumeFileName = (key: string): string =>
+  key.split("/").pop() || "resume.pdf";
 
 type Props = {
   resumeKey: string | null;
@@ -52,13 +58,7 @@ export function ResumeUpload({ resumeKey }: Props) {
   };
 
   const isError = clientError !== "" || state.status === "error";
-  const status =
-    clientError ||
-    (state.status !== "idle"
-      ? state.message
-      : resumeKey
-        ? "A resume is on file. Uploading a new one replaces it."
-        : "");
+  const status = clientError || (state.status !== "idle" ? state.message : "");
 
   return (
     <section className="rounded-2xl border border-border bg-surface p-8 shadow-sm">
@@ -109,6 +109,8 @@ export function ResumeUpload({ resumeKey }: Props) {
           {status}
         </p>
       )}
+
+      {resumeKey && <ResumePreview fileName={resumeFileName(resumeKey)} />}
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-4">
         <p className="text-sm text-text-secondary">
