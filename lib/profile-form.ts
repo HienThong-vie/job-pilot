@@ -6,6 +6,14 @@ import {
   REMOTE_PREFERENCES,
   WORK_AUTHORIZATIONS,
 } from "@/lib/profile-options";
+import {
+  MAX_FIELD_LENGTH,
+  MAX_PHONE_LENGTH,
+  MAX_RESPONSIBILITIES_LENGTH,
+  MAX_ROLES,
+  MAX_TAGS,
+  MAX_TAG_LENGTH,
+} from "@/lib/utils";
 
 /**
  * Reading and validating the profile form. Kept out of the Server Action so it
@@ -17,8 +25,6 @@ import {
  * verbatim, which `code-standards.md` forbids.
  */
 
-const MAX_ROLES = 3;
-
 const tooLong = (limit: number) =>
   `is too long (${limit} characters maximum)`;
 
@@ -27,18 +33,20 @@ const tooMany = (limit: number) => `cannot have more than ${limit} entries`;
 const OPTION_ERROR = "is not one of the available options";
 
 export const workExperienceSchema = z.object({
-  company: z.string().max(200, tooLong(200)),
-  title: z.string().max(200, tooLong(200)),
+  company: z.string().max(MAX_FIELD_LENGTH, tooLong(MAX_FIELD_LENGTH)),
+  title: z.string().max(MAX_FIELD_LENGTH, tooLong(MAX_FIELD_LENGTH)),
   start_date: z.string().max(20, tooLong(20)),
   end_date: z.string().max(20, tooLong(20)),
   is_current: z.boolean(),
-  responsibilities: z.string().max(2000, tooLong(2000)),
+  responsibilities: z
+    .string()
+    .max(MAX_RESPONSIBILITIES_LENGTH, tooLong(MAX_RESPONSIBILITIES_LENGTH)),
 });
 
 const educationSchema = z.object({
   degree: z.union([z.literal(""), z.enum(DEGREES, OPTION_ERROR)]),
-  field: z.string().max(200, tooLong(200)),
-  institution: z.string().max(200, tooLong(200)),
+  field: z.string().max(MAX_FIELD_LENGTH, tooLong(MAX_FIELD_LENGTH)),
+  institution: z.string().max(MAX_FIELD_LENGTH, tooLong(MAX_FIELD_LENGTH)),
   graduation_year: z.union([
     z.literal(""),
     z.string().regex(/^\d{4}$/, "must be a four digit year"),
@@ -46,13 +54,25 @@ const educationSchema = z.object({
 });
 
 export const profileFormSchema = z.object({
-  full_name: z.string().max(200, tooLong(200)).nullable(),
-  phone: z.string().max(50, tooLong(50)).nullable(),
-  location: z.string().max(200, tooLong(200)).nullable(),
+  full_name: z
+    .string()
+    .max(MAX_FIELD_LENGTH, tooLong(MAX_FIELD_LENGTH))
+    .nullable(),
+  phone: z
+    .string()
+    .max(MAX_PHONE_LENGTH, tooLong(MAX_PHONE_LENGTH))
+    .nullable(),
+  location: z
+    .string()
+    .max(MAX_FIELD_LENGTH, tooLong(MAX_FIELD_LENGTH))
+    .nullable(),
   linkedin_url: z.url("must be a full URL, including https://").nullable(),
   portfolio_url: z.url("must be a full URL, including https://").nullable(),
   work_authorization: z.enum(WORK_AUTHORIZATIONS, OPTION_ERROR).nullable(),
-  current_title: z.string().max(200, tooLong(200)).nullable(),
+  current_title: z
+    .string()
+    .max(MAX_FIELD_LENGTH, tooLong(MAX_FIELD_LENGTH))
+    .nullable(),
   experience_level: z.enum(EXPERIENCE_LEVELS, OPTION_ERROR).nullable(),
   years_experience: z
     .number("must be a whole number")
@@ -60,8 +80,12 @@ export const profileFormSchema = z.object({
     .min(0, "cannot be negative")
     .max(60, "cannot be more than 60")
     .nullable(),
-  skills: z.array(z.string().max(60, tooLong(60))).max(50, tooMany(50)),
-  industries: z.array(z.string().max(60, tooLong(60))).max(50, tooMany(50)),
+  skills: z
+    .array(z.string().max(MAX_TAG_LENGTH, tooLong(MAX_TAG_LENGTH)))
+    .max(MAX_TAGS, tooMany(MAX_TAGS)),
+  industries: z
+    .array(z.string().max(MAX_TAG_LENGTH, tooLong(MAX_TAG_LENGTH)))
+    .max(MAX_TAGS, tooMany(MAX_TAGS)),
   work_experience: z
     .array(workExperienceSchema)
     .max(MAX_ROLES, tooMany(MAX_ROLES)),

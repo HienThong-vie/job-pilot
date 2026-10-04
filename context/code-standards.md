@@ -291,7 +291,7 @@ All environment variables defined in `.env.local` for development. Never hardcod
 | `NEXT_PUBLIC_INSFORGE_ANON_KEY` | lib/insforge-client.ts |
 | `BROWSERBASE_API_KEY`           | lib/browserbase.ts     |
 | `BROWSERBASE_PROJECT_ID`        | lib/browserbase.ts     |
-| `OPENAI_API_KEY`                | agent/ functions       |
+| `OPENROUTER_API_KEY`            | lib/openai.ts          |
 | `ADZUNA_APP_ID`                 | lib/adzuna.ts          |
 | `ADZUNA_APP_KEY`                | lib/adzuna.ts          |
 | `NEXT_PUBLIC_POSTHOG_KEY`       | lib/posthog-client.ts  |
@@ -352,13 +352,17 @@ Approved dependencies for this project:
 - `@insforge/sdk` — InsForge client (SSR helpers via its `/ssr` and `/ssr/middleware` subpaths — there is no separate `@insforge/ssr` package, see `library-docs.md`)
 - `@browserbasehq/sdk` — Browserbase sessions
 - `@browserbasehq/stagehand` — AI browser control
-- `openai` — GPT-4o API
+- `openai` — the OpenAI SDK, pointed at OpenRouter (see `library-docs.md`)
 - `posthog-js` — PostHog browser client
 - `posthog-node` — PostHog server client
 - `@react-pdf/renderer` — Resume PDF generation
-- `pdf-parse` — Extract text from uploaded PDF
+- `pdf-parse` — Extract text from uploaded PDF (2.x; the class API, not 1.x's single call)
 - `zod` — Schema validation
 - `lucide-react` — Icons
+- `server-only` — Build-time guard: importing it from a client component fails the
+  build. Added in feature 08 for `components/pdf/ResumeDocument.tsx`, where the
+  consequence of a stray client import is pdfkit in the browser bundle. Ships no
+  runtime code — it is two files that resolve differently per environment.
 - `tailwindcss` — Styling
 - `shadcn/ui` components — UI primitives
 

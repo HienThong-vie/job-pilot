@@ -1,10 +1,13 @@
 "use client";
 
 import { useActionState, useRef, useState, type ChangeEvent } from "react";
-import { CloudUpload, FileText, Loader2 } from "lucide-react";
+import { CloudUpload, Loader2 } from "lucide-react";
 
 import { uploadResume, type ProfileActionState } from "@/actions/profile";
+import { ExtractFromResume } from "@/components/profile/ExtractFromResume";
+import { GenerateResume } from "@/components/profile/GenerateResume";
 import { ResumePreview } from "@/components/profile/ResumePreview";
+import type { ExtractedProfile } from "@/lib/resume-extraction";
 import {
   MAX_RESUME_BYTES,
   RESUME_MIME_TYPE,
@@ -23,9 +26,11 @@ const resumeFileName = (key: string): string =>
 
 type Props = {
   resumeKey: string | null;
+  /** Passed straight through to ExtractFromResume — see ProfileWorkspace. */
+  onExtracted: (extracted: ExtractedProfile) => number;
 };
 
-export function ResumeUpload({ resumeKey }: Props) {
+export function ResumeUpload({ resumeKey, onExtracted }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
   const [clientError, setClientError] = useState("");
   const [state, formAction, isPending] = useActionState(
@@ -110,20 +115,15 @@ export function ResumeUpload({ resumeKey }: Props) {
         </p>
       )}
 
-      {resumeKey && <ResumePreview fileName={resumeFileName(resumeKey)} />}
+      {resumeKey && (
+        <>
+          <ResumePreview fileName={resumeFileName(resumeKey)} />
+          <ExtractFromResume onExtracted={onExtracted} />
+        </>
+      )}
 
-      <div className="mt-6 flex flex-wrap items-center justify-between gap-4 border-t border-border pt-4">
-        <p className="text-sm text-text-secondary">
-          Need a fresh document based on the fields below?
-        </p>
-        <button
-          type="button"
-          className="flex h-10 shrink-0 items-center gap-2.5 rounded-md bg-accent px-5 text-sm font-semibold text-accent-foreground"
-        >
-          <FileText className="size-4" />
-          Generate Resume from Profile
-        </button>
-      </div>
+      {/* Outside the <form> above, so it can never become a submit. */}
+      <GenerateResume resumeKey={resumeKey} />
     </section>
   );
 }

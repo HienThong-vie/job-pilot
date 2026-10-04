@@ -648,35 +648,84 @@ const response = await openai.chat.completions.create({
 - If browser research returns empty — still run synthesis with job + profile only
 - yourEdge, gapsToAddress, and smartQuestions are the most valuable fields — never skip them
 
-## OpenAI GPT-4o
+## GPT-4o (OpenAI SDK via OpenRouter)
 
-**Check first:** Check AGENTS.md for an installed OpenAI skill. The skill will have the latest API patterns and model capabilities.
+**Verified against `openai@7` and the live OpenRouter API on 2026-09-07 (feature 07).**
+
+Every GPT-4o call in this project goes through **OpenRouter**, not the OpenAI API
+directly — the key in `.env.local` is an OpenRouter key. That changes three
+things from the plain OpenAI setup: the `baseURL`, the env var, and the model
+string, which carries the `openai/` namespace.
+
+Never construct the client inline. `lib/openai.ts` owns it and exports the model
+constant, so a feature cannot drift onto a different model or base URL:
+
+```typescript
+// lib/openai.ts
+import OpenAI from "openai";
+
+export const GPT_4O = "openai/gpt-4o";
+
+export function createOpenAI(): OpenAI | null {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) return null;
+  return new OpenAI({ apiKey, baseURL: "https://openrouter.ai/api/v1" });
+}
+```
 
 ### Structured JSON Response
 
 ```typescript
-import OpenAI from "openai";
+import { createOpenAI, GPT_4O } from "@/lib/openai";
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY! });
+const openai = createOpenAI();
+if (!openai) return { success: false, error: "..." };
 
 const response = await openai.chat.completions.create({
-  model: "gpt-4o",
+  model: GPT_4O,
   response_format: { type: "json_object" },
   temperature: 0.3,
+  max_tokens: 800,
   messages: [
-    {
-      role: "system",
-      content: "You are a job matching assistant. Return only valid JSON.",
-    },
-    {
-      role: "user",
-      content: `Your prompt here`,
-    },
+    { role: "system", content: "Return only valid JSON." },
+    { role: "user", content: prompt },
   ],
 });
 
-const result = JSON.parse(response.choices[0].message.content!);
+const choice = response.choices[0];
+if (choice?.finish_reason === "length") {
+  // The response was cut off. Without this check the same failure arrives as a
+  // JSON.parse error and a budget set too low is misread as a bad response.
+}
+const result = JSON.parse(choice.message.content!);
 ```
+
+### Reading images
+
+`openai/gpt-4o` is multimodal, so the same call reads a picture. Swap the user
+message's string content for an array of parts:
+
+```typescript
+messages: [
+  { role: "system", content: SYSTEM_PROMPT },
+  {
+    role: "user",
+    content: [
+      { type: "text", text: "Read this and return the JSON." },
+      ...pageImages.map((url) => ({
+        type: "image_url" as const,
+        image_url: { url },   // a data: URL is accepted
+      })),
+    ],
+  },
+]
+```
+
+Type the array as `ChatCompletionMessageParam[]` (from
+`openai/resources/chat/completions`) or TypeScript widens `type` to `string` and
+rejects it. `response_format`, `temperature` and `max_tokens` behave the same.
+Cap the number of images: each page costs vision tokens *and* about a megabyte
+of request body, and a vision call runs several times longer than a text one.
 
 **Temperature settings:**
 
@@ -690,14 +739,23 @@ const result = JSON.parse(response.choices[0].message.content!);
 - Resume generation: `1000`
 - Profile extraction from resume: `800`
 
+The 800 for profile extraction only holds because the prompt caps each role's
+`responsibilities` at one sentence. Ask for more than that and three roles alone
+overrun the budget — always pair a tight token cap with a prompt that bounds the
+longest field.
+
 **Rules:**
 
-- Model string is always `'gpt-4o'` — never use other model names
+- Model string is always `GPT_4O` from `lib/openai.ts` — never a literal, never another model
+- Client is always `createOpenAI()` — it returns `null` when the key is missing, so
+  a missing key is a handled error rather than a module-level throw
 - Always use `response_format: { type: 'json_object' }` for structured data
-- Always parse `response.choices[0].message.content` as string — even with json_object it returns a string
-- Always validate parsed JSON before using — wrap in try/catch
+- Always check `finish_reason === "length"` before parsing
+- Always parse `choices[0].message.content` as a string — even with json_object it returns a string
+- Always validate parsed JSON with a Zod schema before using — never trust the shape
 - Match threshold is always `MATCH_THRESHOLD` from `lib/utils.ts` — never hardcode 70
 - Company research synthesis must always return a complete dossier — never return empty even if browser research failed
+
 
 ---
 
@@ -764,84 +822,203 @@ await posthog.shutdown(); // required — ensures event is sent
 
 ## @react-pdf/renderer
 
-**Check first:** Check AGENTS.md for an installed react-pdf skill. PDF generation APIs can differ from general training knowledge.
+**Verified against `@react-pdf/renderer@4.9.0` on 2026-09-08 (feature 08),
+reading `node_modules/@react-pdf/renderer/lib/react-pdf.d.ts` and
+`node_modules/@react-pdf/stylesheet/lib/index.d.ts`.** The version of this
+section written before the package was installed was wrong in three places, all
+corrected below — it passed an options object `upload()` does not accept, told
+you to save a public URL for a private bucket, and listed a supported-CSS set
+about a third the size of the real one.
 
 ### Resume PDF Generation
 
-```typescript
-import { renderToBuffer } from '@react-pdf/renderer'
-import { Document, Page, Text, View, StyleSheet } from '@react-pdf/renderer'
+```tsx
+import {
+  Document,
+  Page,
+  StyleSheet,
+  Text,
+  View,
+  renderToBuffer,
+} from "@react-pdf/renderer";
 
 const styles = StyleSheet.create({
-  page: { padding: 30, fontFamily: 'Helvetica' },
-  section: { marginBottom: 10 },
-  heading: { fontSize: 14, fontWeight: 'bold' },
-  text: { fontSize: 10 },
-})
+  page: { paddingVertical: 44, paddingHorizontal: 48, fontFamily: "Helvetica" },
+  name: { fontSize: 22, fontFamily: "Helvetica-Bold" },
+  body: { fontSize: 9.5, lineHeight: 1.55 },
+});
 
 const ResumePDF = ({ profile }: { profile: Profile }) => (
   <Document>
     <Page size="A4" style={styles.page}>
-      <View style={styles.section}>
-        <Text style={styles.heading}>{profile.fullName}</Text>
-        <Text style={styles.text}>{profile.email}</Text>
+      <View>
+        <Text style={styles.name}>{profile.full_name}</Text>
+        <Text style={styles.body}>{profile.email}</Text>
       </View>
     </Page>
   </Document>
-)
+);
 
-// Generate buffer
-const buffer = await renderToBuffer(<ResumePDF profile={profile} />)
+// Buffer, then a File — `upload` takes File | Blob and has NO options argument.
+// A Node Buffer is not a BlobPart, hence the Uint8Array.
+const buffer = await renderToBuffer(<ResumePDF profile={profile} />);
+const file = new File([new Uint8Array(buffer)], "resume.pdf", {
+  type: "application/pdf",
+});
 
-// Upload directly to InsForge Storage
-await insforge.storage
-  .from('resumes')
-  .upload(`${userId}/resume.pdf`, buffer, {
-    contentType: 'application/pdf',
-    upsert: true
-  })
+await insforge.storage.from("resumes").upload(`${userId}/resume.pdf`, file);
 ```
 
-**Supported CSS properties:**
-Only use these — others are silently ignored:
-`padding, margin, fontSize, color, fontFamily, flexDirection, alignItems, justifyContent, borderRadius, width, height, fontWeight, textAlign, lineHeight`
+**`renderToBuffer` returns `Promise<Buffer>`** — the Node-only entry point.
+`renderToString` is deprecated in 4.x; `renderToFile` writes to disk and must
+not be used here.
+
+### Bold is a font, not a weight
+
+There is no bold Helvetica to reach via `fontWeight`. The three PDF standard
+families are `Helvetica` / `Helvetica-Bold` / `Helvetica-Oblique`, `Courier`,
+and `Times-Roman`, and bold is selected by naming the face in `fontFamily`.
+Nothing else is available without `Font.register`, which fetches the file at
+render time — **do not register a webfont here**: it puts a network call inside
+a button press that must not be able to fail that way.
+
+### Supported CSS properties
+
+The authority is the `Style` interface in
+`node_modules/@react-pdf/stylesheet/lib/index.d.ts`, and it is broad — the
+per-side border properties (`borderBottomWidth`, `borderBottomColor`),
+`letterSpacing`, `textTransform`, `gap`, `flexWrap`, `fontStyle`, the per-axis
+padding and margin shorthands and the flexbox set are all there. It is a typed
+object, so an unsupported property is a **compile error**, not a silent no-op.
+Write the style you want and let `tsc` answer the question.
+
+Layout is flexbox only — there is no grid, and no CSS custom properties. A PDF
+cannot read the project's design tokens, so it needs literal colour values; see
+`ResumeDocument.tsx`'s `PDF_COLORS` for how that deviation from `ui-rules.md` is
+kept honest.
+
+### Single page is not enforced
+
+`<Page>` flows onto a second page silently when the content overruns. Nothing
+warns. The only way to guarantee the single page `build-plan.md` asks for is to
+bound what goes on it — the caps live in `lib/utils.ts`
+(`MAX_BULLETS_PER_ROLE`, `MAX_BULLET_LENGTH`, `MAX_SUMMARY_LENGTH`,
+`MAX_PDF_SKILLS`, and `MAX_ROLES` shared with the form).
 
 **Rules:**
 
-- Server-side only — never import in client components
-- Always use `renderToBuffer` — not `renderToStream` or `PDFDownloadLink`
+- Server-side only — never import into a client component, or pdfkit lands in
+  the browser bundle. The document module carries no `"use client"` and is
+  imported by exactly one Route Handler.
+- Always use `renderToBuffer` — not `renderToStream`, `renderToFile` or
+  `PDFDownloadLink`
 - PDF generation only in `app/api/resume/` routes
 - Generated buffer uploaded directly to InsForge Storage — never written to disk
-- Always save public URL to DB after upload
+- Save the object **key** to `profiles.resume_pdf_url`, not a URL. The bucket is
+  private; there is no public URL to save. See the Storage section above.
+- Keep the JSX in the document module and export a render function from it, so
+  the Route Handler stays a `.ts` file
 
 ---
 
 ## pdf-parse
 
-**Check first:** Check AGENTS.md for an installed pdf-parse skill.
+**Verified against `pdf-parse@2.4.5` on 2026-09-07 (feature 07). The 1.x API
+(`import pdf from "pdf-parse"; await pdf(buffer)`) does not exist in 2.x.**
 
-### Extract Text from Uploaded Resume
+2.x is a class wrapping a pdf.js document, not a single call. The document holds
+a worker, so it must be destroyed — a `finally` block, not a happy-path call.
+
+### Extract Text from a Resume PDF
 
 ```typescript
-import pdf from "pdf-parse";
+import { PDFParse } from "pdf-parse";
 
-// In API route handling resume upload
-export async function POST(req: NextRequest) {
-  const formData = await req.formData();
-  const file = formData.get("resume") as File;
-  const arrayBuffer = await file.arrayBuffer();
-  const buffer = Buffer.from(arrayBuffer);
+const parser = new PDFParse({ data: new Uint8Array(arrayBuffer) });
 
-  const pdfData = await pdf(buffer);
-  const extractedText = pdfData.text; // raw text content
-
-  // Send to GPT-4o for structured extraction
+try {
+  const result = await parser.getText(); // { text, pages, total }
+  // pages[].text, never result.text - see below.
+  return result.pages.map((page) => page.text).join("
+").trim();
+} finally {
+  await parser.destroy();
 }
 ```
 
+### Never measure `result.text`
+
+`result.text` interleaves a `-- 1 of 20 --` marker between pages. Those markers
+are text as far as a length check is concerned, and they scale with page count:
+
+```
+                    result.text   pages[].text
+ 1 textless page      12 chars       0 chars
+10 textless pages    167 chars       0 chars
+20 textless pages    347 chars       0 chars   <- clears a 200-char minimum
+30 textless pages    527 chars       0 chars
+```
+
+A 20-page scan with no text layer at all passes a `text.length < 200` guard on
+page numbers alone and gets sent to GPT-4o, which then invents a profile out of
+`-- 1 of 20 --` repeated twenty times. `pages[].text` carries only what was
+actually on the page. There is no option to disable the separator.
+
+### Next.js: pdf-parse must be an external package
+
+```typescript
+// next.config.ts
+serverExternalPackages: ["pdf-parse"],
+```
+
+**Without this every parse fails at runtime** with `Setting up fake worker
+failed: Cannot find module '.next/dev/server/chunks/pdf.worker.mjs'`. pdf.js
+resolves its worker by file path; bundled, that path points into `.next/` where
+the worker was never emitted. Left external, the package is required from
+`node_modules` and finds its own worker. This does not show up in `tsc` or
+`eslint` — only at request time.
+
+### Reading a scan: `getImage`, not `getScreenshot`
+
+A PDF with no text layer still has the page itself as an embedded image — that
+is exactly what a phone scan or a JPG-to-PDF converter produces. Pull it and let
+GPT-4o read it; no OCR dependency is needed, because the model that structures
+the text is multimodal.
+
+```typescript
+const images = await parser.getImage({
+  imageDataUrl: true,      // "data:image/png;base64,..." ready for image_url
+  imageBuffer: false,
+  imageThreshold: 600,     // skips logos and signatures (width OR height)
+  last: 2,                 // page cap - each page is ~1MB of request body
+});
+
+const pageImages = images.pages.flatMap((page) => {
+  const largest = [...page.images].sort(
+    (a, b) => b.width * b.height - a.width * a.height,
+  )[0];
+  return largest ? [largest.dataUrl] : [];
+});
+```
+
+**`getScreenshot()` does not work here.** It rasterises any page — which would
+also cover PDFs that draw text as vectors — but it needs a canvas Node does not
+have, and throws `Cannot transfer object of unsupported type`. `getImage` is
+enough for the scan case, which is the one that matters.
+
+A 900x1165 page came back as a 775 KB PNG data URL, and GPT-4o read a full
+profile off it (name, phone, location, both URLs, title, level, years, 7 skills,
+3 industries, 2 roles with dates) in ~23 seconds.
+
 **Rules:**
 
-- Server-side only — never import in client components
-- `pdfData.text` is raw unformatted text — GPT-4o handles the structure extraction
-- Always handle parse errors — some PDFs are image-based and return empty text
-- If `pdfData.text` is empty or very short — return error to user: "Could not extract text from this PDF. Please try a different file."
+- Server-side only — never import in a Client Component
+- Always `await parser.destroy()` in a `finally` — the worker outlives the request otherwise
+- Take text and images off the **same** open document — do not parse the file twice
+- Only pull images when there is no text; rendering costs real time and memory
+- Join `pages[].text` — never length-check `result.text`, which counts page markers as text
+- The joined text is raw and unformatted — GPT-4o handles the structure extraction
+- An image-only PDF does **not** throw. It parses fine and returns nothing, so a
+  length check is the only signal that there was no text layer: below
+  `MIN_RESUME_TEXT_LENGTH` (`lib/utils.ts`), fall back to reading the page
+  images. Only when there is neither text nor a page image is it a real failure

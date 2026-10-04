@@ -9,7 +9,7 @@
 | Cloud browser                  | Browserbase              | Company research — browsing company public pages |
 | AI browser control             | Stagehand                | Company page interaction and content extraction  |
 | Job Discovery                  | Adzuna API               | Job search and discovery                         |
-| AI model                       | OpenAI GPT-4o            | Matching, research synthesis, extraction         |
+| AI model                       | GPT-4o via OpenRouter    | Matching, research synthesis, extraction         |
 | Analytics                      | PostHog                  | Event tracking and dashboard charts              |
 | PDF generation                 | @react-pdf/renderer      | Resume PDF rendering                             |
 | Styling                        | Tailwind CSS + shadcn/ui | UI components and styling                        |
@@ -62,6 +62,8 @@
 │       │   ├── generate/route.ts          → Generate base resume PDF from profile
 │       │   └── extract/route.ts           → Extract profile data from uploaded resume PDF
 ├── agent/
+│   ├── resume-extractor.ts                → GPT-4o profile extraction from the resume PDF (text, or vision for a scan)
+│   ├── resume-writer.ts                   → GPT-4o resume prose — summary + per-role bullets, no facts
 │   ├── adzuna.ts                          → Adzuna API job discovery + GPT-4o scoring
 │   ├── research.ts                        → Company research — Browserbase + Stagehand + GPT-4o
 │   ├── matcher.ts                         → GPT-4o job matching logic
@@ -86,6 +88,9 @@
 │   │   ├── RecentActivity.tsx
 │   │   └── AnalyticsCharts.tsx
 │   ├── profile/
+│   │   ├── ProfileWorkspace.tsx           → Client — owns the extracted values, remounts the form
+│   │   ├── ExtractFromResume.tsx          → Client — Extract from Resume button + its fetch
+│   │   ├── GenerateResume.tsx             → Client — Generate button + its replace-confirm step
 │   │   ├── ProfileForm.tsx                → Client — the five form sections, useActionState(saveProfile)
 │   │   ├── ProfileAttentionBanner.tsx     → "Profile needs attention" card
 │   │   ├── CompletionIndicator.tsx        → SVG completion ring
@@ -102,12 +107,14 @@
 │   │   ├── JobsTable.tsx
 │   │   ├── JobFilters.tsx
 │   │   └── JobsPagination.tsx
-│   └── job-details/
-│       ├── JobInfo.tsx
-│       ├── MatchScore.tsx
-│       ├── JobDescription.tsx
-│       ├── CompanyResearch.tsx
-│       └── JobActions.tsx
+│   ├── job-details/
+│   │   ├── JobInfo.tsx
+│   │   ├── MatchScore.tsx
+│   │   ├── JobDescription.tsx
+│   │   ├── CompanyResearch.tsx
+│   │   └── JobActions.tsx
+│   └── pdf/                               → Renders to PDF, not to the DOM. Server-only.
+│       └── ResumeDocument.tsx             → The resume document + renderResumePdf()
 ├── lib/
 │   ├── insforge-client.ts                 → InsForge browser client instance
 │   ├── insforge-server.ts                 → InsForge server client
@@ -119,9 +126,12 @@
 │   ├── profile.ts                         → getCurrentProfile() — session user's row, jsonb normalised
 │   ├── profile-completion.ts              → Completion % + missing-field labels
 │   ├── profile-form.ts                    → Zod schema + FormData reader for the profile form
+│   ├── resume-extraction.ts               → Schema, merge, and the browser's request helper
+│   ├── resume-generation.ts               → Generated-prose schema and the browser's request helper
+│   ├── openai.ts                          → OpenAI SDK client pointed at OpenRouter + the model constant
 │   ├── analytics.ts                       → Server-side PostHog event helpers
 │   ├── profile-options.ts                 → Dropdown values + labels, shared by the form and the schema
-│   └── utils.ts                           → Shared constants (resume upload limits + messages)
+│   └── utils.ts                           → Shared constants (resume limits, profile field limits, messages)
 └── types/
     └── index.ts                           → Global TypeScript types
 ```
@@ -460,7 +470,7 @@ const stagehand = new Stagehand({
   projectId: process.env.BROWSERBASE_PROJECT_ID!,
   browserbaseSessionID: session.id,
   modelName: "gpt-4o",
-  modelClientOptions: { apiKey: process.env.OPENAI_API_KEY! },
+  modelClientOptions: { apiKey: process.env.OPENROUTER_API_KEY! },
 });
 
 await stagehand.init();

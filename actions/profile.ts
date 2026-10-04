@@ -17,14 +17,13 @@ import {
   RESUME_MISSING_ERROR,
   RESUME_SIZE_ERROR,
   RESUME_TYPE_ERROR,
+  SESSION_EXPIRED_ERROR,
 } from "@/lib/utils";
 
 export type ProfileActionState = {
   status: "idle" | "success" | "error";
   message: string;
 };
-
-const SESSION_EXPIRED = "Your session has expired. Please sign in again.";
 
 export async function saveProfile(
   _previousState: ProfileActionState,
@@ -34,7 +33,7 @@ export async function saveProfile(
     const insforge = await createInsforgeServer();
     const { data: session } = await insforge.auth.getCurrentUser();
     if (!session.user) {
-      return { status: "error", message: SESSION_EXPIRED };
+      return { status: "error", message: SESSION_EXPIRED_ERROR };
     }
 
     const parsed = profileFormSchema.safeParse(readProfileForm(formData));
@@ -117,7 +116,7 @@ export async function uploadResume(
     const insforge = await createInsforgeServer();
     const { data: session } = await insforge.auth.getCurrentUser();
     if (!session.user) {
-      return { status: "error", message: SESSION_EXPIRED };
+      return { status: "error", message: SESSION_EXPIRED_ERROR };
     }
 
     const file = formData.get("resume");

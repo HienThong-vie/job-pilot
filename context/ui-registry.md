@@ -317,6 +317,100 @@ Measured off `context/designs/profile.png` (2940px export of a 1470px canvas —
 
 Section dividers are the section's own `border-t`, so sections stack without a separate divider element and the card header just carries `pb-4`.
 
+
+---
+
+### Extract from Resume Row
+
+File: `components/profile/ExtractFromResume.tsx`
+Last updated: 2026-09-07
+
+| Property        | Class                                                                                                                                     |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Row             | `mt-6 border-t border-border pt-4` wrapping `flex flex-wrap items-center justify-between gap-4`                                            |
+| Explainer       | `max-w-md text-sm text-text-secondary`                                                                                                     |
+| Button          | `flex h-10 shrink-0 items-center gap-2.5 rounded-md border border-border bg-surface px-5 text-sm font-semibold text-text-primary shadow-sm disabled:opacity-60` |
+| Icon (resting)  | `Sparkles` — `size-4 text-accent`                                                                                                          |
+| Icon (pending)  | `Loader2` — `size-4 animate-spin text-accent`                                                                                              |
+| Status line     | `mt-4 text-sm` — `text-error-strong` + `role="alert"` on failure, `text-text-dark` + `role="status"` on success                            |
+
+**Pattern notes:**
+
+Same row shape as the "Generate Resume from Profile" row directly below it, and
+the same 40px control height as `ResumePreview`'s View link — the resume card now
+stacks three `border-t` rows, each one label plus one control.
+
+**The button is secondary, not accent-filled.** It sits directly above
+"Generate Resume from Profile", which is the accent button. Two filled accent
+buttons stacked would read as two equal primary actions in one card; the
+secondary treatment (`border border-border bg-surface`) is the same one
+`ResumePreview`'s View link already uses, so the card has exactly one filled
+button.
+
+**The explainer carries the warning, not a dialog.** Extraction remounts the
+form and discards edits typed but not saved, so the copy states it outright —
+"This replaces the fields below — nothing is saved until you press Save
+Profile." A `confirm()` would block the page, and an inline confirm row would
+cost a click on the common path (upload -> extract -> edit -> save), where there
+is nothing to lose.
+
+**Success is reported, not just failure.** An extraction is allowed to change
+nothing — a resume that repeats what is already on file. A form that looks
+identical after the button stops spinning is indistinguishable from a button
+that did not work, so the row always says what happened: "Filled in 2 fields
+from your resume." or "We read your resume but found nothing to add to the
+fields below." Same line, same classes as the error, switched by `role`.
+
+**Pending state follows the dropzone, not `SubmitButton`.** This button is not a
+form submit, so there is no `useFormStatus` to read — it holds its own
+`useState` and swaps its glyph for a spinning `Loader2` and its label for
+"Reading your resume…", the same treatment `ResumeUpload` uses while uploading.
+---
+
+### Generate Resume Row (with replace-confirm)
+
+File: `components/profile/GenerateResume.tsx`
+Last updated: 2026-09-08
+
+| Property           | Class                                                                                                            |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Row                | `mt-6 border-t border-border pt-4` wrapping `flex flex-wrap items-center justify-between gap-4`                   |
+| Explainer          | `max-w-md text-sm text-text-secondary`                                                                            |
+| Confirm question   | `max-w-md text-sm text-text-primary` — darker than the explainer it replaces                                      |
+| Button (primary)   | `flex h-10 shrink-0 items-center gap-2.5 rounded-md bg-accent px-5 text-sm font-semibold text-accent-foreground disabled:opacity-60` |
+| Confirm pair       | `flex shrink-0 items-center gap-2.5` — Cancel secondary, then the accent confirm                                  |
+| Cancel             | `flex h-10 items-center rounded-md border border-border bg-surface px-4 text-sm font-semibold text-text-primary shadow-sm` |
+| Icon (resting)     | `FileText` — `size-4`                                                                                             |
+| Icon (pending)     | `Loader2` — `size-4 animate-spin`                                                                                 |
+| Status line        | `mt-4 text-sm` — `text-error-strong` + `role="alert"` on failure, `text-text-dark` + `role="status"` on success    |
+
+**Pattern notes:**
+
+**The card's one filled button.** Same row shape and 40px control height as the
+Extract row above it and `ResumePreview`'s View link, but this is the accent-
+filled control — the resume card stacks three `border-t` rows and exactly one of
+them carries the primary action.
+
+**The icons here carry no `text-accent`.** On the accent-filled button the
+foreground is already `text-accent-foreground`; the accent tint the Extract row
+puts on its `Sparkles` only reads against `bg-surface`.
+
+**This row confirms and the Extract row does not — the difference is what is
+lost.** Extraction discards edits typed but not saved, which the user can retype.
+Generation overwrites `resumes/{user_id}/resume.pdf`, which may be a PDF they
+supplied and cannot get back. So the explainer states the consequence up front
+("This replaces the resume above") and the click swaps the row in place for a
+question plus Cancel / Replace resume.
+
+**The confirm replaces the row rather than opening a dialog.** Inline keeps the
+resume it is about visible directly above it, and nothing about the page is
+blocked — the same reason `ExtractFromResume` avoided `confirm()`.
+
+**The confirm is conditional.** With no resume on file there is nothing to
+replace, so the button generates on the first click and the explainer switches
+to "Save your changes first — it reads the saved version." A confirm step with
+nothing to warn about is friction that teaches the user to click through
+warnings.
 ---
 
 ## Responsive Rules

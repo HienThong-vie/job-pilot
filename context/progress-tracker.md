@@ -7,8 +7,9 @@ Update this file after every completed feature. Any AI agent reading this should
 ## Current Status
 
 **Phase:** Phase 2 — Profile Page
-**Last completed:** 06 Profile Save Logic — `/profile` reads the signed-in user's real row, `saveProfile` writes every field through a zod-validated Server Action, `uploadResume` puts the PDF in the private `resumes` bucket. Verified end to end against the live backend with a real Google session.
-**Next:** 07 AI Profile Extraction from Resume
+**Last completed:** 08 Resume PDF Generation from Profile — a Generate button builds a clean single-page PDF from the saved profile, GPT-4o writing only the summary and the per-role bullets, and replaces the resume on file after a confirm step. **Verified end to end 2026-10-04** against a production build with a real session: happy path, incomplete-profile 422, missing-key handling and the Extract round trip all pass, and `@react-pdf/renderer` needs no `serverExternalPackages` entry. One check is unrun (first generation with `resume_pdf_url` null — no UI path to null the column and the InsForge MCP server was down), and three findings are open — see the end of the 08 entry.
+**Previously:** 07 AI Profile Extraction from Resume — an Extract from Resume button reads the PDF already in storage, GPT-4o (via OpenRouter) returns structured JSON, and the form repopulates without anything being written to the database. Verified end to end against the live backend with a real Google session and a real resume.
+**Next:** 09 Find Jobs Page — Full UI
 
 ---
 
@@ -25,8 +26,8 @@ Update this file after every completed feature. Any AI agent reading this should
 
 - [x] 05 Profile Page — Full UI
 - [x] 06 Profile Save Logic
-- [ ] 07 AI Profile Extraction from Resume
-- [ ] 08 Resume PDF Generation from Profile
+- [x] 07 AI Profile Extraction from Resume
+- [x] 08 Resume PDF Generation from Profile — verified 2026-10-04 against a real session; one check (first generation with `resume_pdf_url` null) still unrun, blocked on DB access
 
 ### Phase 3 — Find Jobs Page
 
@@ -227,7 +228,7 @@ A review pass after the feature was verified turned up 11 issues; all were fixed
 - **A transient read failure logged the user out.** `getCurrentProfile()` returned `null` for both "no session" and "the query failed", and the page redirected to `/login` on null. It now returns a `ProfileResult` discriminated union; the page redirects only on `unauthenticated` and throws on `error`, which lands on a new `app/(app)/error.tsx` boundary (verified by forcing a throw: it renders inside the app shell, keeps the navbar, and does not redirect).
 - **`profile_completed` could fire more than once.** It was gated on the `is_complete` false→true transition, so clearing a field and re-filling it fired it again — but `code-standards.md` defines it as "first time". Added `profiles.profile_completed_at timestamptz` (in `db/schema.sql`, applied and backfilled), set once and never cleared, and the event is gated on it being null. Verified by running a full un-complete → re-complete cycle: `profile_completed_at` stayed at its original timestamp and PostHog still shows exactly one event. **This is the one place the "persist nothing derivable" decision does not apply — "has this ever been true" is not derivable from the current row.**
 - **Dropdown values were duplicated** between `ProfileForm.tsx` and the Zod schema with nothing tying them together; adding an option to a dropdown would have rendered fine and then failed validation on save. New `lib/profile-options.ts` is the single source: each tuple is `satisfies`-checked against its union in `types/index.ts`, and each label map is a `Record` keyed by that tuple, so a value without a label (or vice versa) fails to compile. Both the form and the schema derive from it.
-- **Comma-separated `text[]` inputs could not hold a comma.** "San Francisco, CA" split into two rows. Job Titles Seeking and Preferred Locations now use `TagInput`, the same component Skills and Industries already use, and the reader takes them with `repeated()` rather than splitting. A deliberate deviation from `profile.png`, which shows plain inputs — recorded in `ui-registry.md`. Verified: the value round-trips to Postgres as a single array element.
+- **Comma-separated `text[]` inputs could not hold a comma.** "San Francisco, CA" split into two rows. Job Titles Seeking and Preferred Locations now use `TagInput`, the same component Skills and Industries already use, and the reader takes them with `repeated()` rather than splitting. A deliberate deviation from `profile.png`, which shows plain inputs — recorded in `ui-registry.md`. Verified: the value round-trips to Postgres as a single array element. **Confirmed by the developer 2026-10-04** — the deviation is accepted and `profile.png` is not to be followed here; this is no longer an open question.
   - Worth noting the trap this created and caught: switching the component without switching the reader left `commaSeparated()` reading only the *first* input and still splitting it, silently dropping the rest. The synthetic parser check found it before it shipped.
 - **Error text used `role="status"`**, a polite live region that is not reliably announced for a failed save. Both status lines now switch to `role="alert"` when the state is an error.
 - **A 0-byte file reported "Choose a PDF to upload."** — "no file" and "empty file" are now separate messages.
@@ -259,3 +260,424 @@ Reported after the commit: the upload succeeded but there was no way to look at 
 
 - **shadcn/ui token mapping (pending)** — shadcn expects its own semantic variables (`--background`, `--card`, `--primary`, `--ring`, `--radius`). Ours are named differently (`--color-background`, `--color-surface`, `--color-accent`). When shadcn is initialised, map its variables onto our tokens rather than letting `shadcn init` overwrite the `@theme` block.
 - **Raw Tailwind palette is still available** — `bg-purple-500` etc. would compile. It could be disabled with `--color-*: initial`, but that also removes `text-white`, `border-transparent` and `bg-current`, which shadcn components rely on. Enforcement stays a review-time discipline.
+
+
+---
+
+## 07 AI Profile Extraction from Resume
+
+Completed 2026-09-07. The project's first AI call — the shape features 10, 11
+and 12 will copy.
+
+**What was built**
+
+`app/api/resume/extract/route.ts` (POST, no body) -> `agent/resume-extractor.ts`
+(download -> pdf-parse -> GPT-4o -> validate) -> `lib/resume-extraction.ts`
+(schema + merge) -> `components/profile/ExtractFromResume.tsx` and
+`ProfileWorkspace.tsx`. New `lib/openai.ts` owns the client and the model
+constant. `next.config.ts` gained `serverExternalPackages`.
+
+**Decisions**
+
+- **The route writes nothing.** `saveProfile` stays the only path into the
+  `profiles` table; the user reviews GPT's guesses and presses Save themselves.
+  This is why extraction is a Route Handler and not a Server Action —
+  `architecture.md` scopes `actions/` to mutations, and this mutates nothing.
+- **An API route, not a Server Action**, also because `architecture.md` already
+  declared `app/api/resume/extract/route.ts`, and `/api/resume/:path*` was
+  already in `proxy.ts`'s matcher, so the access token refreshes on it.
+- **The form is repopulated by remounting it with a `key`**, not by converting
+  its inputs to controlled ones. `ProfileWorkspace` owns the extraction and
+  bumps a version counter; `ProfileForm` remounts and every field re-reads its
+  `defaultValue`. Converting five input components to value/onChange would have
+  been a far larger change than the feature asked for. The cost is that an
+  extraction discards edits typed but not saved — the button's own copy says so.
+- **Extracted values win only where there is one.** `mergeExtractedProfile` falls
+  through to the current value for every null and every empty array, so a resume
+  with no phone number cannot clear the phone number the user typed. Verified
+  live: a student CV returned nulls for phone, skills and work experience, and
+  all three survived the extraction untouched.
+- **Only the twelve fields a resume actually contains.** Preferences (job titles
+  seeking, remote preference, salary, preferred locations), work authorization
+  and the read-only email are never sent to the model — `build-plan.md` says
+  "all profile field names", but a model asked for a salary expectation would be
+  inventing one.
+- **`extractedProfileSchema` is `profileFormSchema.pick(...)`**, so the model is
+  validated against the same schema `saveProfile` uses and the two cannot drift.
+  Every field carries `.catch()`: a model that returns "mid-level" where the enum
+  wants "mid" costs that one field, not the whole extraction — and a dropped
+  field falls through to the existing value anyway.
+- **`OPENAI_API_KEY` -> `OPENROUTER_API_KEY`.** The key in `.env.local` was always
+  an OpenRouter key; the docs said otherwise. `lib/openai.ts` now owns the
+  `baseURL` and the `openai/gpt-4o` model string so no feature retypes either.
+- **No new PostHog event.** `code-standards.md` fixes the list at six and forbids
+  inventing names; adding `resume_extracted` is a separate decision.
+- **No `agent_logs` row.** That table's `run_id` hangs off `agent_runs` and this
+  is not an agent run. Errors log with the `[agent/resume-extractor]` prefix.
+
+**Problems solved**
+
+- **`pdf-parse` needs `serverExternalPackages`.** Every parse failed at runtime
+  with `Setting up fake worker failed: Cannot find module
+  '.next/dev/server/chunks/pdf.worker.mjs'` — pdf.js resolves its worker by file
+  path, and bundled that path points into `.next/` where the worker was never
+  emitted. **`tsc` and `eslint` were both clean while this was broken**; only a
+  real request found it. The general lesson: a package that loads a sibling file
+  at runtime cannot be bundled.
+- **`library-docs.md` documented pdf-parse 1.x**, which is not what installs
+  today. 2.4.5 is a class (`new PDFParse({ data }).getText()`) holding a pdf.js
+  document that must be `destroy()`ed in a `finally`. Corrected in the doc, read
+  off the installed `.d.ts` — the same habit that caught three InsForge drifts in
+  feature 06.
+- **An image-only PDF does not throw.** It parses fine and returns about a dozen
+  characters, so a length check is the only signal there was no text layer.
+  Verified against a hand-built text-free PDF: 12 characters, under
+  `MIN_RESUME_TEXT_LENGTH`, friendly error, no GPT-4o call spent.
+- **800 output tokens only fits if the prompt bounds the longest field.** Three
+  roles with free-form responsibilities overrun it, and a truncated
+  `json_object` response fails `JSON.parse` — so the budget would have been
+  misdiagnosed as a bad model response. The prompt caps responsibilities at one
+  sentence, and `finish_reason === "length"` is checked before parsing so a
+  future overrun reports itself.
+- **The dev server logs to `.next/dev/logs/next-development.log`.** Worth knowing:
+  an error thrown inside a Route Handler is invisible from the browser, and
+  Next 16 refuses to start a second dev server for the same project. That file
+  is how to read the stack.
+- **A second `SESSION_EXPIRED` string had appeared.** Now `SESSION_EXPIRED_ERROR`
+  in `lib/utils.ts`, shared by both profile actions, the extract route and the
+  button that calls it.
+
+**Verified live** (real Google session, the developer's own resume):
+
+- Extraction returns `{ success: true, data }` and repopulates the form; no
+  request to `profiles` fires — nothing is persisted before Save.
+- Merge holds: extracted `location` and `institution` won; `phone`, `skills` and
+  both work-experience roles were absent from the extraction and survived, as did
+  the never-extracted `salary_expectation` and `preferred_locations`.
+- Save round-trip: the extracted values persist and reload correctly.
+- Pending state renders (`Loader2` + "Reading your resume…"); the error path
+  renders `role="alert"` (seen for real while the worker bug was live).
+- `resume_pdf_url` null -> 400 with "Upload a resume before extracting your
+  profile from it." (tested by nulling the column and restoring it).
+- Signed out -> the proxy 307s `/api/resume/extract` to `/login`.
+
+**07 Review pass**
+
+A `/review` after the feature was verified found 10 issues; a reported failure
+("I upload the new pdf and click extract, it returns Could not extract text")
+turned out to be correct behaviour but exposed three of them. All 11 are fixed
+and re-verified.
+
+*The reported failure was not a bug.* The uploaded PDF had **zero font objects**
+and one 900x1165 image, produced by iLovePDF — a picture of a resume, not a
+document. Adding pdf.js cmaps and standard font data changed nothing, because
+there is no encoded text to decode. Reading that file needs OCR, which is not in
+this feature or the build plan.
+
+- **The length check was measuring page numbers.** `pdf-parse`'s `result.text`
+  interleaves a `-- 1 of 20 --` marker per page, and those count as text: a
+  20-page scan with no text layer produced 347 characters of markers, cleared
+  `MIN_RESUME_TEXT_LENGTH`, and would have sent pure page numbers to GPT-4o to
+  invent a profile from. `readPdfText` now joins `pages[].text`, which carries
+  only what was on the page — 0 characters at every page count tested (1, 10, 20,
+  30). **The earlier "verified with a text-free PDF" claim was wrong**: that test
+  used a *one*-page PDF, so it measured a single separator and read 12 characters
+  as evidence the check was sound. It only ever held for short documents.
+- **The merge could blank a filled field.** `pickText` used `??`, which falls
+  through on null but not on `""` — and the schema accepts `""` as a valid
+  nullable string. An extraction of empty strings overwrote full_name, phone,
+  location and current_title and reported "Filled in 4 fields". The live path
+  never hit it because `normalizeExtracted` maps `""` to null server-side, but
+  the merge must not depend on its caller having normalized: refusing to blank a
+  filled field is the entire reason it exists. Caught by stubbing the fetch in
+  the browser, which is the only check that exercised the client-side merge
+  without the server's normalizer in front of it.
+- **`is_current` was inferred from "we could not parse this".** Any unparseable
+  end date set the flag, so a role ending `"2019"` — a plausible slip when the
+  prompt asks for `YYYY-MM` — came back ticked as "Currently working here" with
+  its End Date disabled. Only an explicit flag or a genuine present/current/now
+  now counts, and a bare year is rescued to `YYYY-01` instead of blanked.
+- **One over-long entry discarded a whole array.** `.catch()` on an array drops
+  every element, not the offending one, so a single 61-character skill took the
+  other forty-nine with it. `normalizeExtracted` now drops the offending entry
+  before validation. Over-limit values are dropped rather than truncated — a
+  200-character "skill" is not a skill, and a cut-off version puts something in
+  the form the resume never said. `responsibilities` is the one exception: it is
+  prose, so truncation still reads correctly.
+- **A successful extraction that changed nothing said nothing.** Indistinguishable
+  from a dead button — I hit it myself during the original verification and
+  assumed the click had not registered. `mergeExtractedProfile` now returns
+  `{ profile, changed }` and the row reports either "Filled in N fields from your
+  resume." or "We read your resume but found nothing to add to the fields below."
+- **The one failure users actually hit wrote nothing to the log.** Diagnosing the
+  report needed a signed URL, a download and a local probe. The branch now logs
+  the character count it rejected.
+- **The error message told the user nothing actionable**, so the natural next
+  move is to re-export the same way and fail again. Now: "There is no text in
+  this PDF — scans and image exports look like this. Upload a PDF saved from a
+  document instead." **A deliberate departure from `build-plan.md` 07's exact
+  wording.**
+- **`fetch` had leaked into a component.** `architecture.md` scopes `components/`
+  to "UI only. No data fetching logic", and `ExtractFromResume` held the only
+  `fetch` in the codebase — everything else reaches the server through a Server
+  Action. Moved to `requestResumeExtraction()` in `lib/resume-extraction.ts`; the
+  component now renders and nothing else.
+- **Two uncommented type assertions** (`value as Record<string, unknown>`,
+  `DEGREES as readonly string[]`). `lib/profile.ts` already solved the first
+  without one — annotate the target instead of asserting — and the second is now
+  an `isDegree` type guard. `code-standards.md` forbids uncommented assertions,
+  and feature 06's review is what put that rule there.
+- **`pickText` had no return type**, alone among the helpers in its own file.
+- **`MAX_ROLES = 3` existed in three files**, so the form could offer a fourth
+  role the schema would reject. It, `MAX_TAGS`, `MAX_TAG_LENGTH`,
+  `MAX_FIELD_LENGTH`, `MAX_PHONE_LENGTH` and `MAX_RESPONSIBILITIES_LENGTH` are
+  now single-sourced in `lib/utils.ts` and consumed by the schema, the form and
+  the normalizer.
+
+**Verification.** 22 assertions run against the real modules (aliases rewritten,
+`node --experimental-strip-types`) covering the `is_current` cases, per-entry
+array trimming, the empty-string merge and the changed-count. Live in the
+browser: the image PDF now returns the new message with `role="alert"`; a stubbed
+all-empty extraction reports "found nothing" and blanks nothing; a stubbed
+two-field extraction reports "Filled in 2 fields" and changes exactly those two.
+
+**07 Scanned resumes (the last two open items)**
+
+- **A scan is now read, not rejected.** `openai/gpt-4o` is multimodal, so an
+  image-only PDF needs no OCR dependency — the model that structures the text is
+  the one that reads it off the page. When `pages[].text` comes back under
+  `MIN_RESUME_TEXT_LENGTH`, `readPdf` pulls the embedded page images and the same
+  prompt is sent with `image_url` content parts instead of a string.
+  - **`getImage`, not `getScreenshot`.** `getScreenshot` would rasterise any page
+    — including one that draws text as vectors — but it needs a canvas Node does
+    not have and throws `Cannot transfer object of unsupported type`. Embedded
+    images are exactly what a scan-to-PDF produces, so `getImage` covers the case
+    that matters.
+  - **Bounded on purpose:** `MAX_OCR_PAGES = 2` (a third page is rarely new
+    information, and each page is ~1MB of request body plus vision tokens) and
+    `MIN_SCAN_IMAGE_PIXELS = 600` to keep logos and signatures out of it. Only
+    the largest image per page is sent. Images are pulled *only* when there is no
+    text — a normal resume never pays for it.
+  - **Verified in a production build against the developer's own scanned PDF**
+    (zero fonts, one 900x1165 image, Producer iLovePDF): GPT-4o returned name,
+    phone, location, both URLs, title, level, years, 7 skills, 3 industries and 2
+    roles with correct dates in ~23s, with `is_current` true on the open role and
+    false on the closed one. Log: `no text layer, reading 1 page image(s)
+    instead`.
+  - `RESUME_TEXT_ERROR` now fires only when there is neither text nor a page
+    image, and says so.
+- **The missing-key branch was exercised.** A production server started with
+  `OPENROUTER_API_KEY=` empty logs
+  `[agent/resume-extractor] OPENROUTER_API_KEY is not set`, returns the handled
+  422, and every other page still serves — `createOpenAI()` returns null rather
+  than constructing a client, so there is no module-level throw.
+
+**07 — still open**
+
+- **A vision extraction costs meaningfully more than a text one** — more tokens
+  and ~23s against ~5s. Acceptable for a button the user presses once, but worth
+  remembering before anything calls this in a loop.
+- **Client-side `identify()` / `posthog.reset()` still not wired** (carried from
+  03, 04, 05, 06). Still no sign-out control to hang `reset()` on.
+- **Server-side exception tracking still off** (carried from 03).
+- **`/dashboard` is still a 404** — a fresh login lands on a missing page until
+  feature 14.
+
+---
+
+## 08 Resume PDF Generation from Profile
+
+Built 2026-09-08. Closes the loop feature 07 opened: the profile is the thing
+the user maintains, and a resume is generated from it on demand.
+
+**What was built**
+
+`app/api/resume/generate/route.ts` (POST, no body) -> `agent/resume-writer.ts`
+(GPT-4o writes the prose) -> `components/pdf/ResumeDocument.tsx`
+(`renderResumePdf` -> `renderToBuffer`) -> upload to `resumes/{user_id}/resume.pdf`
+-> `profiles.resume_pdf_url`. `lib/resume-generation.ts` holds the schema and the
+browser's request helper; `components/profile/GenerateResume.tsx` replaces the
+inert button that had been sitting in `ResumeUpload.tsx` since feature 05.
+
+**Decisions**
+
+- **The model writes prose and nothing else.** It returns
+  `{ summary, roles: [{ index, bullets }] }`. Every fact on the page — name,
+  email, phone, location, URLs, company names, titles, dates, skills, education
+  — is rendered from the profile row. What is never sent to the model cannot
+  come back hallucinated, and a resume with the wrong phone number on it is
+  worse than no resume. It also keeps the budget at 900 output tokens.
+- **Roles are addressed by index, never by company name.** Matching on a name
+  means deciding what to do when the model returns "Vercel Inc." for a row that
+  says "Vercel" — and getting that wrong staples one job's bullets under another
+  job's title, the worst thing this feature could do. An index lines up or the
+  role is dropped.
+- **Generating replaces the single resume on file, and the UI says so first.**
+  Same key as an upload, no schema change, `build-plan.md` 08 literal. Because
+  that is a one-way destructive write over a file the user may have supplied
+  themselves, `GenerateResume` shows a confirm step first — skipped when
+  `resume_pdf_url` is null, since then there is nothing to replace. Knowingly
+  accepted consequence: after generating, "Extract from Resume" reads the
+  machine-written file. The confirm copy is what makes that a choice.
+- **The gate is `getProfileCompletion().isComplete`, checked before the model
+  call.** One definition of "enough profile" in the app — the same ten fields
+  the completion ring and the attention banner use — so the missing-field labels
+  the 422 hands back are the ones already on screen. An incomplete profile would
+  otherwise spend a GPT-4o call producing an empty PDF.
+- **Temperature 0.6, against the extractor's 0.3.** Extraction is transcription,
+  where invention is the enemy. This is writing, and bullets at 0.3 read like
+  they all came out of the same mould.
+- **Helvetica only, no `Font.register`.** Registering a webfont fetches it at
+  render time, putting a network call inside a button press that must not be
+  able to fail that way. Bold is `fontFamily: "Helvetica-Bold"` — there is no
+  bold to reach through `fontWeight`.
+- **Single page is enforced by bounding the content, not by clipping.**
+  `<Page>` flows onto page two silently. The caps live in `lib/utils.ts`.
+- **No new PostHog event and no `agent_logs` row** — same reasoning as 07.
+  `code-standards.md` fixes the event list at six, and `agent_logs.run_id` hangs
+  off `agent_runs`; a button press is not a run.
+
+**Deviations**
+
+- **`ResumeDocument.tsx` uses hardcoded hex, against `ui-rules.md`.**
+  @react-pdf/renderer's `StyleSheet` compiles to PDF drawing operations and
+  cannot read a CSS custom property, so a PDF has no way to honour the token
+  rule. Three values are copied into a `PDF_COLORS` map with the token each came
+  from named in a comment on it. `--color-accent` is deliberately unused: a
+  resume is a print and ATS artifact before it is a branded surface.
+- **`build-plan.md` 08 says "GPT-4o generates professional resume content"**,
+  which reads as the whole document. It writes the summary and the bullets —
+  exactly the three things the plan then lists — and no facts. Deliberate.
+
+**Problems solved**
+
+- **`library-docs.md`'s @react-pdf/renderer section was wrong in three places**,
+  having been written before the package was ever installed: it passed
+  `{ contentType, upsert: true }` to an `upload()` that takes no options
+  argument, told you to save a public URL for a bucket that is private, and
+  listed a supported-CSS set about a third the size of the real one. Rewritten
+  against `@react-pdf/renderer@4.9.0`'s own `.d.ts` — the same habit that caught
+  the pdf-parse 1.x/2.x drift in 07 and three InsForge drifts in 06.
+- **`renderToBuffer` returns a Node `Buffer`, which is not a `BlobPart`.** The
+  storage `upload()` takes `File | Blob`, so the buffer is wrapped in a
+  `Uint8Array` on the way in.
+- **The route stays `.ts` by keeping the JSX behind `renderResumePdf`** in the
+  document module, which is how `architecture.md` declares it.
+
+**Fixed after `/review`**
+
+Six issues found reviewing 08 against its plan, all fixed the same session.
+
+- **`normalizeGenerated` did not bound `index`, so one bad index rejected the
+  whole resume.** The schema bounded it, but a schema failure fails the entire
+  `safeParse` — an index of 5 against three roles cost the user everything
+  instead of one role's bullets. The exact shape of feature 07's
+  over-long-skill bug, reintroduced. The range check now sits in the normalizer
+  next to the other per-entry drops. Confirmed against the real modules: the two
+  cases that rejected the batch now drop the bad entry and keep the good one.
+- **A blank work-experience row printed a gap in the resume.**
+  `workExperienceSchema` allows every field to be `""` and
+  `getProfileCompletion` only counts entries, so a saved-but-unfilled role
+  passed the gate. New `resumeRoles()` in `lib/resume-generation.ts` keeps only
+  roles with a title or a company. **The writer and the document must both call
+  it** — the indices in the response are positions in that list, so filtering
+  differently in the two places would print one job's bullets under another
+  job's title. The route now 422s when it leaves nothing.
+- **`import "server-only"` was in the approved plan and had been dropped**
+  during the build, because the package was not on the approved list. Fixing
+  that the other way round was correct: `server-only` is installed and added to
+  `code-standards.md`. It ships no runtime code, and it turns a stray client
+  import of the PDF document — which would put pdfkit in the browser bundle —
+  into a build failure instead of a comment nobody reads.
+- **No timeout on the OpenRouter calls** (carried from 07, fixed for both).
+  `lib/openai.ts` now sets a 60s client default and pins `maxRetries: 1` — the
+  SDK's default of 2 would have made the worst case three attempts. The writer
+  passes a tighter 30s per request; the wide client default exists for the
+  extractor's vision pass, which measured ~23s in 07.
+- **The summary's character cap was never told to the model**, so an over-long
+  summary was silently cut mid-word on a document meant to be sent to employers.
+  The prompt states it now, as it already did for bullets.
+- **`promptInput` had no explicit return type**, against `code-standards.md`.
+
+**Verified 2026-10-04** — signed-in run against `next start`, real session, real
+backend. Five of the six outstanding checks pass; one is blocked.
+
+1. **Happy path — pass.** `/Count 1`, MediaBox 595.28×841.89 (A4), 3341 bytes,
+   `/BaseFont` limited to Helvetica and Helvetica-Bold. Contact line renders
+   `email · phone · location · linkedin.com/in/… · github.com/…` with the
+   schemes stripped; both roles print under the correct title with the right
+   dates (`Jan 2022 — Present`, `Mar 2019 — Dec 2021`), bullets correctly
+   indexed; skills and the education line come straight off the row. 12.3s.
+   **The UI path is verified too**, not just the route: clicking the button runs
+   idle → confirm → "Writing your resume…" with a spinner → "Your resume is
+   ready. Open it below to check it before you send it anywhere." Rendered in
+   Chrome's PDF viewer the page reads as a clean professional resume — bold name
+   over a muted headline, right-aligned dates against bold role titles, ruled
+   section headings, indented bullets, generous whitespace, nothing clipped.
+   Confirmed by the developer 2026-10-04. (With two roles and no optional
+   sections the lower third of the page is empty; expected, not a defect.)
+2. **First generation with `resume_pdf_url` null — not run.** Needs the column
+   nulled and there is no UI path to it. The InsForge MCP server stayed
+   `CONNECTION_CLOSED` for the whole session, including after the developer
+   reconnected it — MCP servers are dialled at session start, so a mid-session
+   reconnect needs a Claude Code restart to take effect. `.env.local` carries
+   only the anon key, which RLS correctly stops from updating a profile row, so
+   there was no second path. Confirmed by inspection instead: `GenerateResume`
+   branches on `if (resumeKey) → confirm; else → generate()`, and calls
+   `router.refresh()` on success so the resume row and Extract button appear.
+   The *confirm* branch is verified at runtime; only the one-line skip branch is
+   unexercised. **Run this after any Claude Code restart with the MCP up.**
+3. **Incomplete profile — pass.** Phone cleared and saved: 422,
+   `Still missing: PHONE.`, in 2.25s against 12.3s for a real generation, so no
+   GPT-4o call was made. Phone restored and re-verified after a reload.
+4. **`OPENROUTER_API_KEY=` empty — pass.** 502 with the user-facing message,
+   `[agent/resume-writer] OPENROUTER_API_KEY is not set` in the server log, and
+   `/` and `/login` still 200.
+5. **Round trip — pass.** Extract on the generated PDF returned the right name,
+   title, years, all four skills and both roles with correct `is_current`.
+   **It took 83s**, past the 60s client timeout and into its one retry — see the
+   open question below.
+6. **`@react-pdf/renderer` does not need `serverExternalPackages` — settled by a
+   real render.** It was the right thing to doubt: pdfkit's Node build does not
+   inline the standard-font metrics, it registers them lazily as
+   `Helvetica: () => require$1('#standard-fonts/Helvetica')` — a runtime require
+   of a wildcard subpath import, structurally the same trap as pdf-parse's
+   worker path, and `getStandardFont` throws outright when it is unregistered.
+   It survives because Turbopack leaves pdfkit external: after a build the
+   string `Helvetica-BoldOblique` appears in no emitted JS, only in
+   `route.js.nft.json`, which traces all 14 `.afm` files and the
+   `standard-fonts/` modules. So Node's own `imports` resolution applies at
+   runtime. **Do not "optimise" pdfkit into the bundle** — inlining it is what
+   would break this, and neither `tsc` nor `next build` would notice.
+
+**Found during verification — open**
+
+- **~~The model invents specifics inside bullets~~ — withdrawn, it does not.**
+  The generated resume carried "Led a team of three developers to deliver
+  high-quality frontend solutions," which was flagged during verification as an
+  invented claim. It is not: the role's `responsibilities` field reads "Shipped
+  Next.js features and led a team of three." The number is the user's own, and
+  the prompt already forbids inventing one ("Never invent a number") and already
+  receives `responsibilities` in `promptInput`. The bullets are a faithful
+  rewrite. **The finding was made without reading the source field and was
+  wrong** — recorded here because the next reader would otherwise re-open it.
+  What the model does add is qualitative padding ("innovative", "efficient",
+  "high-quality"), which is ordinary resume prose and is the user's to edit.
+  Bullets are also non-deterministic at temperature 0.6: two generations from
+  the same row produced "led a team of three developers" and "led a team of
+  three". Expected, not a defect.
+- **Extraction on a generated PDF took 83s** (item 5), past the 60s client
+  timeout and into its one retry. Not a text-layer problem: `pdf-parse` reads a
+  @react-pdf/renderer file cleanly — verified directly, 205 chars including
+  bullets and middots — so the vision fallback was not involved. The backend was
+  flaky throughout the session (`[actions/auth] Service Temporarily Unavailable`
+  and `Bad Gateway` in the log, InsForge MCP refusing connections), so this is
+  most likely provider latency rather than a defect. Re-measure before treating
+  it as one.
+- **`normalizeGenerated` bounds `index` against `MAX_ROLES`, not the actual
+  number of roles.** With two roles saved, an `index` of 2 passes both the
+  normalizer and the schema, then matches nothing in `bulletsForRole` and is
+  silently dropped. It did not bite here — the model returned 0 and 1 — and it
+  fails in the safe direction (a role printed without bullets, never one job's
+  bullets under another's title). Still, it is the same "bound it where it is
+  used" lesson the earlier fix recorded.
