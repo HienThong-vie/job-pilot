@@ -6,9 +6,8 @@ import { Plus } from "lucide-react";
 import { FormField } from "@/components/profile/FormField";
 import { FormSection } from "@/components/profile/FormSection";
 import { TextInput } from "@/components/profile/TextInput";
+import { MAX_ROLES } from "@/lib/utils";
 import type { WorkExperienceEntry } from "@/types";
-
-const MAX_ROLES = 3;
 
 const EMPTY_ROLE: WorkExperienceEntry = {
   company: "",

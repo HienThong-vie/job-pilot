@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 
 import { ProfileAttentionBanner } from "@/components/profile/ProfileAttentionBanner";
-import { ProfileForm } from "@/components/profile/ProfileForm";
-import { ResumeUpload } from "@/components/profile/ResumeUpload";
+import { ProfileWorkspace } from "@/components/profile/ProfileWorkspace";
 import { getCurrentProfile } from "@/lib/profile";
 import { getProfileCompletion } from "@/lib/profile-completion";
 
@@ -24,8 +23,7 @@ export default async function ProfilePage() {
       {!completion.isComplete && (
         <ProfileAttentionBanner completion={completion} />
       )}
-      <ResumeUpload resumeKey={profile.resume_pdf_url} />
-      <ProfileForm profile={profile} />
+      <ProfileWorkspace profile={profile} />
     </div>
   );
 }
