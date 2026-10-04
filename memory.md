@@ -65,9 +65,10 @@ Only documentation changed: `context/progress-tracker.md` now carries the full
 
 ## Current state
 
-- **`main` is at `e326675`**, fast-forwarded from `feature/profile-page-and-save`.
-  Features 05, 06, 07 and 08 are all now on `main`. **Nothing has been pushed** —
-  `origin/main` is still at `37e8f6a`.
+- **`main` is at `b2d4a16`**, fast-forwarded from `feature/profile-page-and-save`
+  (which still points at the same commit). Features 05, 06, 07 and 08 are all now
+  on `main`, and `next build` is clean there. **Nothing has been pushed** —
+  `origin/main` is still at `37e8f6a`, five commits behind.
 - Feature 08 verification: **5 of 6 checks pass.** Happy path (one page, A4,
   Helvetica only, every fact traced to the profile row, 12.3s), incomplete-profile
   422 naming the missing field with no GPT-4o call, empty `OPENROUTER_API_KEY`
