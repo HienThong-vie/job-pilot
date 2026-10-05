@@ -93,6 +93,13 @@ create table if not exists public.jobs (
   found_at           timestamptz not null default now()
 );
 
+-- The listing's id at its source (Adzuna's ad id). A repeated search returns
+-- many of the same listings; the unique index below lets the agent skip the
+-- ones a user already has instead of scoring and saving them twice. Null for
+-- URL-sourced jobs — Postgres treats nulls as distinct, so they never collide.
+alter table public.jobs
+  add column if not exists external_id text;
+
 create table if not exists public.agent_logs (
   id         uuid primary key default gen_random_uuid(),
   run_id     uuid        references public.agent_runs (id) on delete cascade,
@@ -120,6 +127,10 @@ create index if not exists jobs_run_id_idx             on public.jobs (run_id);
 create index if not exists agent_logs_run_id_idx       on public.agent_logs (run_id);
 create index if not exists agent_logs_user_id_idx      on public.agent_logs (user_id);
 create index if not exists agent_logs_job_id_idx       on public.agent_logs (job_id);
+
+-- Not partial: PostgREST's on_conflict cannot name a partial index's predicate,
+-- and the upsert in agent/adzuna.ts needs to target this one.
+create unique index if not exists jobs_user_external_id_key on public.jobs (user_id, external_id);
 
 
 -- ---------------------------------------------------------------------------

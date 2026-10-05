@@ -52,3 +52,39 @@ export type Profile = {
   created_at: string;
   updated_at: string;
 };
+
+/**
+ * One row of the Find Jobs table — the subset of a `jobs` row the list shows.
+ * `found_at_label` is `found_at` already formatted by `formatFoundAt` in
+ * `lib/jobs.ts`, so the table stays free of date logic.
+ */
+export type JobListRow = {
+  id: string;
+  company: string;
+  title: string;
+  match_score: number;
+  salary: string | null;
+  found_at_label: string;
+};
+
+/**
+ * Everything the job details page shows. `job_type_label`, `found_at_label`
+ * and the two links are already resolved by `getJob` in `lib/jobs.ts`, so the
+ * components stay free of formatting logic.
+ */
+export type JobDetail = {
+  id: string;
+  company: string;
+  title: string;
+  match_score: number;
+  match_reason: string | null;
+  matched_skills: string[];
+  missing_skills: string[];
+  salary: string | null;
+  location: string | null;
+  job_type_label: string | null;
+  description: string | null;
+  found_at_label: string;
+  view_url: string | null;
+  apply_url: string | null;
+};

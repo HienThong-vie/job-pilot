@@ -14,6 +14,7 @@ export const config = {
     // `createServerClient` only reads it. Without this entry a link clicked
     // more than 15 minutes after the page loaded fails as if signed out.
     "/api/resume/:path*",
+    "/api/agent/:path*",
   ],
 };
 

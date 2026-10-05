@@ -102,14 +102,48 @@ export const OPENAI_TIMEOUT_MS = 60_000;
 export const RESUME_WRITE_TIMEOUT_MS = 30_000;
 
 /**
- * The generate route refuses an incomplete profile before it reaches GPT-4o —
- * a blank profile would spend a model call producing an empty PDF. The gate is
- * `getProfileCompletion().isComplete`, the same ten fields the completion ring
- * and the attention banner already use, so the missing field labels it hands
- * back are the ones the user is already looking at.
+ * Scoring runs in parallel, so the slowest single call sets the search's wait.
+ * A score measured 3-8 seconds; 20 is a hung call, not a slow one. With the
+ * Adzuna timeout (10s) this bounds a search at about 30 seconds plus database
+ * writes — inside the route's `maxDuration` and the "under a minute" the UI
+ * promises.
  */
-export const profileIncompleteError = (missingFields: string[]): string =>
-  `Complete your profile before generating a resume. Still missing: ${missingFields.join(", ")}.`;
+export const JOB_SCORE_TIMEOUT_MS = 20_000;
+
+/**
+ * The generate and find routes refuse an incomplete profile before it reaches
+ * GPT-4o — a blank profile would spend model calls producing an empty PDF or
+ * scores that mean nothing. The gate is `getProfileCompletion().isComplete`,
+ * the same ten fields the completion ring and the attention banner already use,
+ * so the missing field labels it hands back are the ones the user has seen.
+ */
+export const profileIncompleteError = (
+  missingFields: string[],
+  action: string,
+): string =>
+  `Complete your profile before ${action}. Still missing: ${missingFields.join(", ")}.`;
+
+/**
+ * A job at or above this score is a "strong match". Feature 11's High / Low
+ * Match filters split on it too, so it is defined once here.
+ */
+export const MATCH_THRESHOLD = 70;
+
+/**
+ * Adzuna syndicates one posting under many ad ids — one employer's listing
+ * repeated city by city filled a whole page of 10 in feature 10's testing. So a
+ * search asks for a deep page (still one request against the quota), collapses
+ * the copies, and scores at most MAX_SCORED_PER_SEARCH of what is left. The
+ * second number is the ceiling on GPT-4o calls per Find Jobs press.
+ */
+export const ADZUNA_RESULTS_PER_PAGE = 50;
+export const MAX_SCORED_PER_SEARCH = 10;
+
+/** The Find Jobs table's page size — `build-plan.md` 11. */
+export const JOBS_PAGE_SIZE = 20;
+
+export const JOB_SEARCH_ERROR =
+  "Could not search for jobs right now. Please try again.";
 
 /**
  * Profile field limits. Shared because three layers have to agree on them: the

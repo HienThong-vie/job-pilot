@@ -57,7 +57,10 @@ export async function POST() {
       return NextResponse.json(
         {
           success: false,
-          error: profileIncompleteError(completion.missingFields),
+          error: profileIncompleteError(
+            completion.missingFields,
+            "generating a resume",
+          ),
         },
         { status: 422 },
       );
