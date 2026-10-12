@@ -2,6 +2,24 @@
 
 Job Pilot finds jobs that fit a candidate's profile, scores each one against it, and researches the employer, all from one dashboard.
 
+## Screenshots
+
+**Find Jobs** — scored jobs with search, filters and sorting.
+
+![Find Jobs page listing scored jobs with match-score bars](docs/screenshots/find-jobs.png)
+
+**Job details** — the match reasoning and the skills the candidate has and is missing.
+
+![Job details page with AI match reasoning and a skills comparison](docs/screenshots/job-details.png)
+
+**Company research** — a dossier built by browsing the employer's website.
+
+![Company research card with overview, tech stack and culture](docs/screenshots/company-research.png)
+
+**Profile and resume** — upload, extract from, or generate a resume.
+
+![Profile page with resume upload, extract and generate actions](docs/screenshots/profile.png)
+
 ## Features
 
 - **Profile and resume** — a complete profile form with a completion ring. A resume can be uploaded, read into the form (scanned PDFs are read by vision), or generated from the profile as a single-page PDF.
