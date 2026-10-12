@@ -2,6 +2,8 @@
 
 Job Pilot finds jobs that fit a candidate's profile, scores each one against it, and researches the employer, all from one dashboard.
 
+**Live demo:** [job-pilot-theta-rose.vercel.app](https://job-pilot-theta-rose.vercel.app) — sign in with Google or GitHub. Each account only sees its own data.
+
 ## Screenshots
 
 **Find Jobs** — scored jobs with search, filters and sorting.
