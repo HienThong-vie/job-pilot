@@ -1,4 +1,4 @@
-import { createOpenAI, GPT_4O } from "@/lib/openai";
+import { createOpenAI, MODEL_PARAMS } from "@/lib/openai";
 import {
   generatedResumeSchema,
   normalizeGenerated,
@@ -123,7 +123,7 @@ export async function writeResumeContent(
 
     const response = await openai.chat.completions.create(
       {
-        model: GPT_4O,
+        ...MODEL_PARAMS,
         response_format: { type: "json_object" },
         temperature: TEMPERATURE,
         max_tokens: MAX_TOKENS,

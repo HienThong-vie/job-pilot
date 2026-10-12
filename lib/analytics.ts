@@ -94,6 +94,28 @@ export async function trackJobsFound(
   }
 }
 
+/** Powers the dashboard's Company Research Activity chart — feature 14. */
+export async function trackCompanyResearched(
+  userId: string,
+  jobId: string,
+  company: string,
+): Promise<void> {
+  try {
+    const posthog = createPostHogServer();
+    if (!posthog) return;
+
+    posthog.capture({
+      distinctId: userId,
+      event: "company_researched",
+      properties: { userId, jobId, company },
+    });
+
+    await posthog.shutdown();
+  } catch (error) {
+    console.error("[lib/analytics] trackCompanyResearched", error);
+  }
+}
+
 export async function trackProfileCompleted(userId: string): Promise<void> {
   try {
     const posthog = createPostHogServer();

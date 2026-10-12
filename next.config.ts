@@ -5,7 +5,11 @@ const nextConfig: NextConfig = {
   // Bundled, that path points into .next/ where the worker was never emitted
   // and every parse fails with "Setting up fake worker failed". Left external,
   // the package is required from node_modules and finds its own worker.
-  serverExternalPackages: ["pdf-parse"],
+  //
+  // Stagehand finds its bundled browser extension the same way, with
+  // `new URL("../", import.meta.url)`, which the bundler rejects as
+  // "Module not found: Can't resolve '../'".
+  serverExternalPackages: ["pdf-parse", "@browserbasehq/stagehand"],
   experimental: {
     // Server Action bodies are capped at 1MB by default, but the resume
     // dropzone accepts PDFs up to 5MB. The extra megabyte is headroom for the

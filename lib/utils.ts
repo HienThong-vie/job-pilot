@@ -111,6 +111,13 @@ export const RESUME_WRITE_TIMEOUT_MS = 30_000;
 export const JOB_SCORE_TIMEOUT_MS = 20_000;
 
 /**
+ * The dashboard waits on this before it paints. PostHog caps a query's own
+ * execution at 10 seconds, so 12 covers a query that runs to that cap plus the
+ * round trip; past it the charts say "unavailable" rather than hold the page.
+ */
+export const POSTHOG_QUERY_TIMEOUT_MS = 12_000;
+
+/**
  * The generate and find routes refuse an incomplete profile before it reaches
  * GPT-4o — a blank profile would spend model calls producing an empty PDF or
  * scores that mean nothing. The gate is `getProfileCompletion().isComplete`,
@@ -144,6 +151,70 @@ export const JOBS_PAGE_SIZE = 20;
 
 export const JOB_SEARCH_ERROR =
   "Could not search for jobs right now. Please try again.";
+
+/**
+ * Company research limits — `build-plan.md` 13. One Browserbase session visits
+ * the homepage and at most MAX_RESEARCH_SUBPAGES more, and ends itself after
+ * RESEARCH_SESSION_SECONDS even if our `close()` never runs. Each page gets
+ * RESEARCH_PAGE_TIMEOUT_MS to load, so four slow pages still fit the session.
+ *
+ * Page text is cut at MAX_RESEARCH_PAGE_TEXT before it reaches GPT-4o: the
+ * opening of a page says what it is about, and the rest is input tokens paid
+ * for footers and legal copy.
+ */
+export const RESEARCH_SESSION_SECONDS = 120;
+export const RESEARCH_PAGE_TIMEOUT_MS = 20_000;
+export const MAX_RESEARCH_SUBPAGES = 3;
+export const MAX_RESEARCH_PAGE_TEXT = 12_000;
+
+/**
+ * The research route's time budget. Every step is bounded, so the worst case
+ * fits the route's `maxDuration` of 240 seconds:
+ *
+ *   redirect 5 + search 8 + extension upload wait 45 + launch 20
+ *   + browsing 60 (+ one page started at the deadline, 21.5)
+ *   + last extraction 20 + synthesis 45 = 224.5, plus the save and the flush.
+ *
+ * Measured 2026-10-10: the extension upload took 25 to 45 seconds, and is
+ * normally already done by the time a research starts (`instrumentation.ts`
+ * uploads it at boot). A launch reusing it took 5 to 7 seconds. A typical run
+ * with the extension ready is about a minute.
+ *
+ * Research model calls get one attempt each. A retry would double a timeout
+ * the budget cannot afford, and a failed page extraction only costs that page.
+ */
+export const RESEARCH_REDIRECT_TIMEOUT_MS = 5_000;
+export const RESEARCH_SEARCH_TIMEOUT_MS = 8_000;
+/** How long a research waits for the boot-time extension upload to finish. */
+export const RESEARCH_EXTENSION_TIMEOUT_MS = 45_000;
+export const RESEARCH_LAUNCH_TIMEOUT_MS = 20_000;
+/** Counted from when the session is open. No new page is opened after it. */
+export const RESEARCH_BROWSE_BUDGET_MS = 60_000;
+export const RESEARCH_EXTRACT_TIMEOUT_MS = 20_000;
+export const RESEARCH_SYNTHESIS_TIMEOUT_MS = 45_000;
+
+/** The longest list in a dossier — the prompt asks for it and Zod enforces it. */
+export const MAX_DOSSIER_ITEMS = 5;
+/** Tech stack entries are single names, not sentences, so more of them fit. */
+export const MAX_TECH_STACK_ITEMS = 12;
+
+export const RESEARCH_ERROR =
+  "Could not research this company right now. Please try again.";
+
+/**
+ * A re-run that could not reach the company's website keeps the earlier,
+ * website-backed dossier rather than replacing it with a thinner one.
+ */
+/**
+ * OpenRouter answers 402 when the account cannot pay for the request. Nothing
+ * the user retries will change that, so it gets its own message instead of
+ * RESEARCH_ERROR's "try again".
+ */
+export const RESEARCH_AI_UNAVAILABLE_ERROR =
+  "Company research is unavailable: the AI service has run out of credits.";
+
+export const RESEARCH_KEPT_ERROR =
+  "Could not reach the company's website this time, so your earlier research was kept. Please try again later.";
 
 /**
  * Profile field limits. Shared because three layers have to agree on them: the

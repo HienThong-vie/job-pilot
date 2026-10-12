@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import type { JobListing } from "@/lib/adzuna";
-import { createOpenAI, GPT_4O } from "@/lib/openai";
+import { createOpenAI, MODEL_PARAMS } from "@/lib/openai";
 import { JOB_SCORE_TIMEOUT_MS, MAX_TAG_LENGTH } from "@/lib/utils";
 import type { Profile } from "@/types";
 
@@ -173,7 +173,7 @@ export async function scoreJob(
 
     const response = await openai.chat.completions.create(
       {
-        model: GPT_4O,
+        ...MODEL_PARAMS,
         response_format: { type: "json_object" },
         temperature: TEMPERATURE,
         max_tokens: MAX_TOKENS,

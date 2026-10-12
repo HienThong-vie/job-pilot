@@ -54,7 +54,11 @@ export default async function JobDetailsPage(
         missing={job.missing_skills}
       />
       <JobDescription description={job.description} />
-      <CompanyResearch company={job.company} />
+      <CompanyResearch
+        jobId={job.id}
+        company={job.company}
+        dossier={job.company_research}
+      />
       {job.apply_url ? (
         <ApplyButton company={job.company} applyUrl={job.apply_url} />
       ) : null}

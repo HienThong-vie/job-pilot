@@ -2,7 +2,7 @@ import type { InsForgeClient } from "@insforge/sdk";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { PDFParse } from "pdf-parse";
 
-import { createOpenAI, GPT_4O } from "@/lib/openai";
+import { createOpenAI, MODEL_PARAMS } from "@/lib/openai";
 import { DEGREES, EXPERIENCE_LEVELS } from "@/lib/profile-options";
 import {
   extractedProfileSchema,
@@ -120,7 +120,7 @@ export async function extractProfileFromResume(
     }
 
     const response = await openai.chat.completions.create({
-      model: GPT_4O,
+      ...MODEL_PARAMS,
       response_format: { type: "json_object" },
       temperature: 0.3,
       max_tokens: MAX_TOKENS,

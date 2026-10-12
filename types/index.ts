@@ -68,6 +68,22 @@ export type JobListRow = {
 };
 
 /**
+ * The company research dossier saved to `jobs.company_research` — feature 13.
+ * `sources` is never the model's: it is the pages the browser actually read.
+ */
+export type CompanyDossier = {
+  companyOverview: string;
+  techStack: string[];
+  culture: string[];
+  whyThisRole: string;
+  yourEdge: string[];
+  gapsToAddress: string[];
+  smartQuestions: string[];
+  interviewPrep: string[];
+  sources: string[];
+};
+
+/**
  * Everything the job details page shows. `job_type_label`, `found_at_label`
  * and the two links are already resolved by `getJob` in `lib/jobs.ts`, so the
  * components stay free of formatting logic.
@@ -87,4 +103,34 @@ export type JobDetail = {
   found_at_label: string;
   view_url: string | null;
   apply_url: string | null;
+  company_research: CompanyDossier | null;
+};
+
+export type StatTrendTone = "up" | "down" | "flat";
+
+/**
+ * One of the four stat cards on the dashboard. `trend` and `trendTone` are
+ * absent on cards that only carry a caption, and on a card with no baseline yet.
+ */
+export type DashboardStat = {
+  label: string;
+  value: string;
+  trend?: string;
+  trendTone?: StatTrendTone;
+  caption: string;
+};
+
+export type ActivityTone = "accent" | "info" | "success";
+
+export type ActivityItem = {
+  id: string;
+  message: string;
+  timeAgo: string;
+  tone: ActivityTone;
+};
+
+/** One bar or one point on a dashboard chart. */
+export type ChartPoint = {
+  label: string;
+  value: number;
 };

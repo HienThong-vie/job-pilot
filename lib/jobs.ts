@@ -1,9 +1,17 @@
+import type { InsForgeClient } from "@insforge/sdk";
 import { z } from "zod";
 
+import { companyDossierSchema } from "@/lib/company-dossier";
+import { buildDashboardStats, type JobStatsRow } from "@/lib/dashboard-stats";
 import { createInsforgeServer } from "@/lib/insforge-server";
 import type { JobFilters } from "@/lib/job-filters";
 import { JOBS_PAGE_SIZE, MATCH_THRESHOLD } from "@/lib/utils";
-import type { JobDetail, JobListRow } from "@/types";
+import type {
+  CompanyDossier,
+  DashboardStat,
+  JobDetail,
+  JobListRow,
+} from "@/types";
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -149,8 +157,24 @@ type JobDetailRow = {
   about_role: string | null;
   source_url: string | null;
   external_apply_url: string | null;
+  company_research: unknown;
   found_at: string;
 };
+
+/**
+ * The stored dossier, or null. A row written by an older shape fails the
+ * schema and reads as "not researched yet", so the card offers a fresh run
+ * instead of the page throwing.
+ */
+function parseDossier(value: unknown): CompanyDossier | null {
+  if (value === null || value === undefined) return null;
+  const parsed = companyDossierSchema.safeParse(value);
+  if (!parsed.success) {
+    console.error("[lib/jobs] stored dossier", parsed.error.message);
+    return null;
+  }
+  return parsed.data;
+}
 
 export type JobResult =
   | { status: "ok"; job: JobDetail }
@@ -181,7 +205,7 @@ export async function getJob(id: string): Promise<JobResult> {
   const { data, error } = await insforge.database
     .from("jobs")
     .select(
-      "id, company, title, match_score, match_reason, matched_skills, missing_skills, salary, location, job_type, about_role, source_url, external_apply_url, found_at",
+      "id, company, title, match_score, match_reason, matched_skills, missing_skills, salary, location, job_type, about_role, source_url, external_apply_url, company_research, found_at",
     )
     .eq("id", id)
     .eq("user_id", session.user.id)
@@ -217,6 +241,160 @@ export async function getJob(id: string): Promise<JobResult> {
       found_at_label: formatFoundAt(row.found_at),
       view_url: row.source_url ?? link,
       apply_url: link,
+      company_research: parseDossier(row.company_research),
+    },
+  };
+}
+
+export type JobStatsResult =
+  | { status: "ok"; stats: DashboardStat[] }
+  | { status: "unauthenticated" }
+  | { status: "error" };
+
+// Rows per request. A server may cap a response below this, so the loop in
+// getJobStats pages on the exact count rather than trusting one response to be
+// complete.
+const STATS_PAGE_SIZE = 1000;
+
+type StatsPage = {
+  rows: JobStatsRow[];
+  count: number | null;
+  error: { code: string; message: string } | null;
+};
+
+async function readStatsPage(
+  insforge: InsForgeClient,
+  userId: string,
+  from: number,
+): Promise<StatsPage> {
+  const { data, count, error } = await insforge.database
+    .from("jobs")
+    .select("found_at, match_score", { count: "exact" })
+    .eq("user_id", userId)
+    // `id` last makes the order total, so paging never repeats or skips a row.
+    .order("found_at", { ascending: false })
+    .order("id")
+    .range(from, from + STATS_PAGE_SIZE - 1);
+
+  // The select above names exactly these two columns.
+  return { rows: (data ?? []) as JobStatsRow[], count, error };
+}
+
+/**
+ * The dashboard's four stat cards for the signed-in user.
+ *
+ * The researched count comes from `count: "exact"`. The average and both
+ * trends need the scores and dates themselves, so those are read as two small
+ * columns and reduced in `buildDashboardStats`.
+ */
+export async function getJobStats(): Promise<JobStatsResult> {
+  const insforge = await createInsforgeServer();
+  const { data: session } = await insforge.auth.getCurrentUser();
+  if (!session.user) return { status: "unauthenticated" };
+  const userId = session.user.id;
+
+  const [first, researched] = await Promise.all([
+    readStatsPage(insforge, userId, 0),
+    insforge.database
+      .from("jobs")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .not("company_research", "is", null),
+  ]);
+
+  const failure = first.error ?? researched.error;
+  if (failure) {
+    console.error("[lib/jobs] getJobStats", failure.code, failure.message);
+    return { status: "error" };
+  }
+
+  const rows = [...first.rows];
+  const total = first.count ?? rows.length;
+
+  for (let from = STATS_PAGE_SIZE; from < total; from += STATS_PAGE_SIZE) {
+    const page = await readStatsPage(insforge, userId, from);
+    if (page.error) {
+      console.error("[lib/jobs] getJobStats page", page.error.code, page.error.message);
+      return { status: "error" };
+    }
+    rows.push(...page.rows);
+  }
+
+  return {
+    status: "ok",
+    stats: buildDashboardStats(rows, researched.count ?? 0),
+  };
+}
+
+/** What the research agent needs from a job — `build-plan.md` 13. */
+export type ResearchJob = {
+  id: string;
+  company: string;
+  title: string;
+  description: string | null;
+  matched_skills: string[];
+  missing_skills: string[];
+  /** The saved listing link — Adzuna's tracked redirect for searched jobs. */
+  link: string | null;
+  /** The dossier already saved, if any — a failed re-run must not replace it. */
+  saved_research: CompanyDossier | null;
+};
+
+export type ResearchJobResult =
+  | { status: "ok"; job: ResearchJob }
+  | { status: "not_found" }
+  | { status: "error" };
+
+/**
+ * One job for the research agent, scoped to the user. Takes the route's client
+ * and user id rather than reading the session again: the route has already
+ * authenticated, and the agent writes back through the same client.
+ */
+export async function getResearchJob(
+  insforge: InsForgeClient,
+  userId: string,
+  id: string,
+): Promise<ResearchJobResult> {
+  const { data, error } = await insforge.database
+    .from("jobs")
+    .select(
+      "id, company, title, about_role, matched_skills, missing_skills, source_url, external_apply_url, company_research",
+    )
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) {
+    console.error("[lib/jobs] getResearchJob", error.code, error.message);
+    return { status: "error" };
+  }
+  if (!data) return { status: "not_found" };
+
+  const row = data as Pick<
+    JobDetailRow,
+    | "id"
+    | "company"
+    | "title"
+    | "about_role"
+    | "matched_skills"
+    | "missing_skills"
+    | "source_url"
+    | "external_apply_url"
+    | "company_research"
+  >;
+
+  return {
+    status: "ok",
+    job: {
+      id: row.id,
+      company: row.company ?? "Unknown company",
+      title: row.title ?? "Untitled role",
+      description: row.about_role,
+      matched_skills: row.matched_skills ?? [],
+      missing_skills: row.missing_skills ?? [],
+      // The apply link is the likelier of the two to be the employer's own.
+      link: row.external_apply_url ?? row.source_url,
+      saved_research: parseDossier(row.company_research),
     },
   };
 }
