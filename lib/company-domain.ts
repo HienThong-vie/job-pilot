@@ -115,7 +115,7 @@ export function employerDomain(url: string): string | null {
   return domain;
 }
 
-/** "Acme Corp, Inc." → ["acme", "corp"] — legal suffix dropped, letters and digits only. */
+/** "Acme Corp, Inc." → ["acme"] — everything from the legal suffix on is dropped, letters and digits only. */
 function nameWords(company: string): string[] {
   return company
     .replace(/\s*(,\s*)?(Inc\.?|LLC|Ltd\.?|Limited|Corp\.?|Corporation|Co\.?|GmbH|PLC|Pty)\b.*$/i, "")
@@ -126,7 +126,7 @@ function nameWords(company: string): string[] {
     .filter(Boolean);
 }
 
-/** "Acme Corp, Inc." → "acmecorp". */
+/** "Acme Corp, Inc." → "acme". */
 const compactName = (company: string): string => nameWords(company).join("");
 
 /**

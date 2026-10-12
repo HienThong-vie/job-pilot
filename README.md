@@ -28,6 +28,7 @@ Job Pilot finds jobs that fit a candidate's profile, scores each one against it,
 
 ```
 app/          routes, route handlers (app/api) and layouts
+tests/        unit tests
 actions/      server actions for UI mutations
 agent/        matcher, resume extractor and writer, company research, Adzuna client
 components/   UI components grouped by page
@@ -58,9 +59,12 @@ Open [http://localhost:3000](http://localhost:3000).
 
 Without the PostHog query key the page still renders, and the charts show an "unavailable" message.
 
-### Database
+### Database and storage
 
-Apply `db/schema.sql` to the InsForge Postgres database. Every statement is idempotent, so it is safe to re-run.
+1. Create an InsForge project and copy its URL and anon key into `.env.local`.
+2. Apply `db/schema.sql` to the project's Postgres database. Every statement is idempotent, so it is safe to re-run. It creates the `profiles`, `agent_runs`, `jobs` and `agent_logs` tables, with row-level security so each user can only read and write their own rows.
+3. Create a **private** storage bucket named `resumes`. Uploaded resumes are stored at `resumes/{user_id}/resume.pdf` and served through short-lived signed URLs.
+4. Enable the Google and GitHub providers in the project's auth settings, and allow `http://localhost:3000/callback` as a redirect URL.
 
 ## Scripts
 
@@ -70,3 +74,12 @@ Apply `db/schema.sql` to the InsForge Postgres database. Every statement is idem
 | `npm run build` | Production build |
 | `npm start` | Serve the production build |
 | `npm run lint` | Run ESLint |
+| `npm test` | Run the unit tests |
+
+## Testing
+
+`npm test` runs the unit tests with [Vitest](https://vitest.dev). They cover the pure logic that the pages depend on: dashboard stat and chart aggregation, profile completion, Find Jobs filter parsing and URL building, and employer-domain detection for company research. Network-facing code (Adzuna, the LLM calls, Browserbase, PostHog) is not mocked and is not covered by the suite.
+
+## License
+
+[MIT](LICENSE)

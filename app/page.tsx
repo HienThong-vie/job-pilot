@@ -6,7 +6,7 @@ import { FeatureSection } from "@/components/homepage/FeatureSection";
 import { Hero } from "@/components/homepage/Hero";
 import { Testimonial } from "@/components/homepage/Testimonial";
 
-import agentLog from "@/public/images/agnet-log.png";
+import agentLog from "@/public/images/agent-log.png";
 import jobsList from "@/public/images/jobs-lists.png";
 
 const searchFeatures = [
