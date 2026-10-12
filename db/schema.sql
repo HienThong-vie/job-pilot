@@ -1,7 +1,7 @@
 -- JobPilot — feature 04 Database Schema
 --
--- Source of truth for the InsForge/Postgres schema. Executed with the InsForge
--- `run-raw-sql` MCP tool, which connects as `project_admin` (owns what it
+-- Source of truth for the InsForge/Postgres schema. Run against the InsForge
+-- Postgres database as `project_admin` (owns what it
 -- creates, bypasses RLS). Re-runnable: every statement is idempotent.
 --
 -- SECURITY — read before adding a table here.

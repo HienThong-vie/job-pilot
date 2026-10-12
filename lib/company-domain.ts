@@ -1,5 +1,5 @@
 /**
- * Finds the employer's own website for a job — `build-plan.md` 13.
+ * Finds the employer's own website for a job.
  *
  * The saved link is Adzuna's tracked redirect. Following it server-side usually
  * lands on the employer's job page, whose root domain is their site. Two traps
@@ -130,8 +130,7 @@ function nameWords(company: string): string[] {
 const compactName = (company: string): string => nameWords(company).join("");
 
 /**
- * The company-name guess the spec falls back to, after `architecture.md`'s
- * Company Research Pattern. Null when nothing usable is left.
+ * The company-name guess used as a fallback. Null when nothing usable is left.
  */
 export function guessDomainFromCompany(company: string): string | null {
   const name = compactName(company);

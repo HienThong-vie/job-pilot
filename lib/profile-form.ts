@@ -22,7 +22,7 @@ import {
  *
  * Every constraint carries its own message. A bare Zod message ("Too big:
  * expected string to have <=200 characters") would be shown to the user
- * verbatim, which `code-standards.md` forbids.
+ * verbatim, which would read as a developer error.
  */
 
 const tooLong = (limit: number) =>

@@ -1,10 +1,5 @@
 @import "tailwindcss" source("../");
 
-/* Docs and design notes contain example class names — keep them out of the bundle */
-@source not "../context";
-@source not "../.claude";
-@source not "../.agents";
-
 @theme {
   /* Font */
   --font-sans: var(--font-inter), "Inter", sans-serif;
@@ -99,7 +94,7 @@
 }
 
 @layer base {
-  /* Tailwind v4 defaults every border to currentColor — ui-rules requires --color-border */
+  /* Tailwind v4 defaults every border to currentColor — the design uses --color-border */
   *,
   ::after,
   ::before,

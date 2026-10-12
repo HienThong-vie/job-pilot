@@ -6,7 +6,7 @@ import { JOB_SCORE_TIMEOUT_MS, MAX_TAG_LENGTH } from "@/lib/utils";
 import type { Profile } from "@/types";
 
 /**
- * `library-docs.md` budgets 300 tokens for scoring. That only holds because the
+ * The scoring call is budgeted at 300 tokens. That only holds because the
  * prompt bounds the two open-ended fields: the reason at three sentences and
  * each skills list at eight entries.
  */

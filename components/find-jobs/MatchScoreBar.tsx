@@ -5,7 +5,7 @@ type Props = {
 };
 
 // A <progress> rather than a div with an inline width: the fill length is
-// dynamic, and code-standards forbids inline styles. Each engine styles its
+// dynamic, and the project avoids inline styles. Each engine styles its
 // own pseudo-element, so every fill rule is written twice.
 const FILL: Record<ScoreTone, string> = {
   high: "[&::-webkit-progress-value]:bg-success [&::-moz-progress-bar]:bg-success",

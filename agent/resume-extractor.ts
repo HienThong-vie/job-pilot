@@ -26,7 +26,7 @@ const TOO_LONG_ERROR =
   "That resume was too long to read in one pass. Try a shorter version.";
 
 /**
- * `library-docs.md` budgets 800 output tokens for this call. The prompt holds
+ * This call is budgeted at 800 output tokens. The prompt holds
  * the response inside it by capping each role's responsibilities at a sentence
  * — without that cap three roles alone would overrun, and a truncated
  * json_object response fails to parse, which reads to the user as a broken

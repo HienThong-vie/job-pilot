@@ -31,9 +31,8 @@ export const MAX_RESUME_TEXT_LENGTH = 12_000;
 /**
  * Reached only when a PDF has neither a text layer nor a page image big enough
  * to read — a scan now falls back to GPT-4o's vision instead of failing here.
- * `build-plan.md` 07 words this "Could not extract text from this PDF", which
- * was both less accurate and less actionable; a deliberate departure recorded
- * in `progress-tracker.md`.
+ * The original wording was "Could not extract text from this PDF", which
+ * was both less accurate and less actionable.
  */
 export const RESUME_TEXT_ERROR =
   "We could not read any text or images from this PDF. Please try a different file.";
@@ -66,7 +65,7 @@ export const SESSION_EXPIRED_ERROR =
  * Resume generation limits, used by `agent/resume-writer.ts` to bound GPT-4o's
  * prose and by `components/pdf/ResumeDocument.tsx` to bound what it renders.
  *
- * `build-plan.md` 08 asks for a *single-page* PDF. @react-pdf/renderer does not
+ * The spec calls for a *single-page* PDF. @react-pdf/renderer does not
  * enforce that — it flows silently onto page two — so the page is kept to one
  * by limiting what can go on it. Three roles (MAX_ROLES) at three bullets each,
  * a short summary and one line of skills is about three quarters of an A4 page
@@ -146,14 +145,14 @@ export const MATCH_THRESHOLD = 70;
 export const ADZUNA_RESULTS_PER_PAGE = 50;
 export const MAX_SCORED_PER_SEARCH = 10;
 
-/** The Find Jobs table's page size — `build-plan.md` 11. */
+/** The Find Jobs table's page size. */
 export const JOBS_PAGE_SIZE = 20;
 
 export const JOB_SEARCH_ERROR =
   "Could not search for jobs right now. Please try again.";
 
 /**
- * Company research limits — `build-plan.md` 13. One Browserbase session visits
+ * Company research limits. One Browserbase session visits
  * the homepage and at most MAX_RESEARCH_SUBPAGES more, and ends itself after
  * RESEARCH_SESSION_SECONDS even if our `close()` never runs. Each page gets
  * RESEARCH_PAGE_TIMEOUT_MS to load, so four slow pages still fit the session.

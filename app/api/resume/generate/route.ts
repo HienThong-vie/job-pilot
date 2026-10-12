@@ -24,7 +24,7 @@ import {
  * no body for the same reason: everything it needs is already on the row.
  *
  * The write replaces whatever resume was there, uploaded or generated. That is
- * the intended behaviour (`build-plan.md` 08) and the button warns before it
+ * intended behaviour, and the button warns before it
  * happens.
  */
 export async function POST() {
@@ -88,7 +88,7 @@ export async function POST() {
     const buffer = await renderResumePdf(profile, written.data);
 
     // `upload` takes a File | Blob and has no options argument — the installed
-    // SDK's storage surface is documented in `library-docs.md`. The Buffer is
+    // SDK's storage surface is limited to that. The Buffer is
     // wrapped in a Uint8Array because a Node Buffer is not a BlobPart.
     const file = new File([new Uint8Array(buffer)], "resume.pdf", {
       type: RESUME_MIME_TYPE,

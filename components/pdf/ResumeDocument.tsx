@@ -25,7 +25,7 @@ import type { Profile } from "@/types";
  * @react-pdf/renderer, and this module is imported by exactly one place —
  * `app/api/resume/generate/route.ts`. Keeping the render call here rather than
  * in the route is what lets the route stay a plain `.ts` file with no JSX in
- * it, which is how `architecture.md` declares it. There is no `"use client"`
+ * it, which is how the project structures its routes. There is no `"use client"`
  * here and there must never be one: importing this into a client component
  * would pull pdfkit into the browser bundle.
  *
@@ -34,12 +34,12 @@ import type { Profile } from "@/types";
  */
 
 /**
- * A deliberate, recorded exception to `ui-rules.md`'s "never use hardcoded hex".
+ * A deliberate exception to the "never use hardcoded hex" rule.
  *
  * That rule exists so the app's UI cannot drift from the token set.
  * @react-pdf/renderer's StyleSheet resolves to PDF drawing operations and
  * cannot read a CSS custom property, so a PDF has no way to honour it. These
- * three values are copied from `ui-tokens.md` with the token they came from
+ * three values are copied from the design tokens with the token they came from
  * named on each — if a token changes, this changes with it.
  *
  * `--color-accent` is deliberately absent. A resume is a print and ATS artifact

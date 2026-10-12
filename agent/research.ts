@@ -26,7 +26,7 @@ import {
 import type { CompanyDossier, Profile } from "@/types";
 
 /**
- * Company research — `build-plan.md` 13.
+ * Company research agent.
  *
  * Three steps: one Browserbase session reads the employer's homepage and up to
  * three of its pages, GPT-4o pulls the substance out of each page as it
@@ -43,8 +43,8 @@ const EXTRACT_TEMPERATURE = 0.3;
 const EXTRACT_MAX_TOKENS = 600;
 const SYNTHESIS_TEMPERATURE = 0.4;
 /**
- * `library-docs.md` once budgeted 800, which nine fields at up to five
- * one-to-two sentence items each overrun. The prompt bounds every list.
+ * An 800-token budget was too small: nine fields at up to five
+ * one-to-two sentence items each overrun it. The prompt bounds every list.
  */
 const SYNTHESIS_MAX_TOKENS = 1500;
 const MAX_PROMPT_RESPONSIBILITIES = 400;

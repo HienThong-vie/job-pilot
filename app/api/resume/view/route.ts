@@ -9,7 +9,7 @@ import { getCurrentProfile } from "@/lib/profile";
 const SIGNED_URL_TTL_SECONDS = 60;
 
 /**
- * Redirect-only Route Handler (see code-standards.md): its whole job is to send
+ * Redirect-only Route Handler: its whole job is to send
  * the browser at the file. The `resumes` bucket is private, so the object key
  * stored in `profiles.resume_pdf_url` is not fetchable on its own — the session
  * is checked here and exchanged for a short-lived signed URL.

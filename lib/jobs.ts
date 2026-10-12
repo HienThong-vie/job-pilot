@@ -326,7 +326,7 @@ export async function getJobStats(): Promise<JobStatsResult> {
   };
 }
 
-/** What the research agent needs from a job — `build-plan.md` 13. */
+/** What the research agent needs from a job. */
 export type ResearchJob = {
   id: string;
   company: string;
